@@ -70,7 +70,7 @@ export const LearnMorePage = () => {
                 offline, use time-locked release timers, and settle to Celo when the network becomes available again.
               </p>
               <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-                <Button size="lg" className="bg-emerald-500 text-white hover:bg-emerald-400" onClick={() => navigate('/auth/signup')}>
+                <Button size="lg" className="bg-emerald-500 text-white hover:bg-emerald-400" onClick={() => navigate('/auth/login')}>
                   Create Wallet
                   <ArrowRight />
                 </Button>

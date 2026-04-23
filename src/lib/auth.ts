@@ -53,6 +53,13 @@ export const storeSession = (sessionToken: string, user: SessionUser) => {
   }
 };
 
+export const hasValidStoredAdminSession = () => {
+  const token = getStoredToken();
+  const user = getStoredUser();
+
+  return Boolean(token && isAdminUser(user));
+};
+
 export const clearSession = () => {
   const storage = getSessionStorage();
   if (!storage) {

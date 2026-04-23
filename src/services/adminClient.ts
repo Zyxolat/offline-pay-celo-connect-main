@@ -10,8 +10,6 @@ const withAdminApiLogging = async <T>(label: string, request: Promise<T>) => {
 };
 
 export const adminAPI = {
-  login: (email: string, password: string) =>
-    withAdminApiLogging('login', api.post('/admin/login', { email, password })),
   getStats: () => withAdminApiLogging('getStats', api.get('/admin/stats')),
   getUsers: (page = 1, limit = 50) =>
     withAdminApiLogging('getUsers', api.get('/admin/users', { params: { page, limit } })),

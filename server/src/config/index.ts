@@ -186,15 +186,27 @@ function getAdminEmail() {
 }
 
 function getAdminPassword() {
-  const password = requireEnv('ADMIN_PASSWORD', {
-    allowInDevFallback: 'admin123',
+  const passwordHash = requireEnv('ADMIN_PASSWORD_HASH', {
+    allowInDevFallback: '$2b$10$W9B3Jx7g5Q7eY8J9W6s4rOzO5A1mV6M0M6GgY8tXxYJ4YgA1rD2hK',
   });
 
-  if (isProduction() && password.length < 12) {
-    failConfig('ADMIN_PASSWORD must be at least 12 characters in production');
+  if (!/^\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}$/.test(passwordHash)) {
+    failConfig('ADMIN_PASSWORD_HASH must be a valid bcrypt hash');
   }
 
-  return password;
+  return passwordHash;
+}
+
+function getAllowedAdminIps() {
+  const rawValue = getOptionalEnv('ADMIN_ALLOWED_IPS');
+  if (!rawValue) {
+    return [];
+  }
+
+  return rawValue
+    .split(',')
+    .map((ip) => ip.trim())
+    .filter(Boolean);
 }
 
 function parseDatabaseUrl(value: string): URL {
@@ -290,15 +302,10 @@ if (webauthnRpId !== frontendOriginUrl.hostname) {
   });
 }
 
-const googleClientId = requireEnv('GOOGLE_CLIENT_ID');
 const port = isProduction()
   ? parsePort(requireEnv('PORT'), 0)
   : parsePort(process.env.PORT, 3001);
 const databaseConfig = getDatabaseConfig();
-
-if (process.env.GOOGLE_CLIENT_SECRET?.trim()) {
-  warnConfig('GOOGLE_CLIENT_SECRET is set but unused because Google sign-in uses ID token verification only');
-}
 
 export const config = {
   port,
@@ -313,13 +320,9 @@ export const config = {
 
   admin: {
     email: getAdminEmail(),
-    password: getAdminPassword(),
+    passwordHash: getAdminPassword(),
+    allowedIps: getAllowedAdminIps(),
   },
-
-  google: {
-    clientId: googleClientId,
-  },
-
   webauthn: {
     rpName: process.env.WEBAUTHN_RP_NAME || 'OfflinePay',
     rpID: webauthnRpId,

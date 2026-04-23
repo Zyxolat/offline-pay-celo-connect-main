@@ -10,15 +10,8 @@ const withApiErrorLogging = async <T>(label: string, request: Promise<T>) => {
 };
 
 export const authAPI = {
-  googleLogin: (idToken: string) => withApiErrorLogging('googleLogin', api.post('/auth/google', { idToken })),
-  registerOptions: (email: string) =>
-    withApiErrorLogging('registerOptions', api.post('/auth/webauthn/register/options', { email })),
-  registerVerify: (email: string, credential: any) =>
-    withApiErrorLogging('registerVerify', api.post('/auth/webauthn/register/verify', { email, credential })),
-  loginOptions: (email: string) =>
-    withApiErrorLogging('loginOptions', api.post('/auth/webauthn/login/options', { email })),
-  loginVerify: (email: string, credential: any) =>
-    withApiErrorLogging('loginVerify', api.post('/auth/webauthn/login/verify', { email, credential })),
+  login: (email: string, password: string) =>
+    withApiErrorLogging('login', api.post('/auth/login', { email, password })),
   logout: () => withApiErrorLogging('logout', api.post('/auth/logout')),
 };
 

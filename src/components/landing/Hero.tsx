@@ -38,7 +38,7 @@ const Hero = () => {
           </p>
 
           <div className="hero-fintech__actions">
-            <Button size="lg" onClick={() => navigate("/auth/signup")}>
+            <Button size="lg" onClick={() => navigate("/auth/login")}>
               Start Payment
               <ArrowRight size={18} />
             </Button>

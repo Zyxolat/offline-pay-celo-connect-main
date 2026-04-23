@@ -126,7 +126,7 @@ const AppRoutes = () => {
       <Route path="/wc" element={renderSafeRoute("Wallet Callback", <WalletCallbackRoute />)} />
       <Route path="/learn-more" element={renderSafeRoute("Learn More", <LearnMorePage />)} />
       <Route path="/login" element={renderSafeRoute("Login Redirect", <Navigate to="/auth/login" replace />)} />
-      <Route path="/signup" element={renderSafeRoute("Signup Redirect", <Navigate to="/auth/signup" replace />)} />
+      <Route path="/signup" element={renderSafeRoute("Signup Redirect", <Navigate to="/auth/login" replace />)} />
       <Route path="/auth/*" element={renderSafeRoute("Auth", <AuthPages />)} />
       <Route
         path="/dashboard"

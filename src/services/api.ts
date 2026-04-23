@@ -33,13 +33,19 @@ api.interceptors.response.use(
       error.message = `Cannot reach the API server at ${API_BASE_URL}.`;
     }
 
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 || error.response?.status === 403) {
       const path = window.location.pathname;
       const isAdminRoute = path.startsWith('/admin');
       const isAdminApi = String(error.config?.url || '').includes('/admin/');
+      const isAuthLogin = String(error.config?.url || '').includes('/auth/login');
 
-      if (!isAdminRoute && !isAdminApi) {
+      if (!isAuthLogin) {
         clearSession();
+      }
+
+      if (isAdminRoute || isAdminApi) {
+        window.location.href = '/auth/login';
+      } else if (!isAuthLogin) {
         window.location.href = '/auth/login';
       }
     }

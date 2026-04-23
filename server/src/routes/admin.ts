@@ -1,20 +1,11 @@
-import { NextFunction, Response, Router } from 'express';
+import { Response, Router } from 'express';
 import type { PoolClient } from 'pg';
 import pool from '../config/database.js';
-import { config } from '../config/index.js';
-import { AuthSessionModel } from '../models/AuthSession.js';
-import { UserModel } from '../models/User.js';
-import { AuthRequest, authMiddleware } from '../middleware/auth.js';
-import { tokenService } from '../services/tokenService.js';
+import { AuthRequest, requireAdminAuth } from '../middleware/auth.js';
 import { transactionService } from '../services/transactionService.js';
 import { normalizeError } from '../utils/logger.js';
-import { z } from 'zod';
 
 const router = Router();
-const adminLoginSchema = z.object({
-  email: z.string().trim().email(),
-  password: z.string().min(6),
-});
 
 async function withReadSnapshot<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
   const client = await pool.connect();
@@ -32,89 +23,9 @@ async function withReadSnapshot<T>(work: (client: PoolClient) => Promise<T>): Pr
   }
 }
 
-const adminMiddleware = async (req: AuthRequest, res: Response, next: NextFunction) => {
-  try {
-    if (!req.user) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
+router.use(requireAdminAuth);
 
-    const activeSessionToken = tokenService.parseAuthHeader(req.headers.authorization);
-    if (!activeSessionToken) {
-      return res.status(401).json({ error: 'Unauthorized' });
-    }
-
-    const session = await AuthSessionModel.findActiveSession(activeSessionToken);
-    if (!session) {
-      return res.status(401).json({ error: 'Session expired or invalid' });
-    }
-
-    const adminUser = await UserModel.findById(req.user.userId);
-    if (!adminUser?.is_admin && req.user.role !== 'admin' && !session.is_admin) {
-      return res.status(403).json({ error: 'Admin access required' });
-    }
-
-    await AuthSessionModel.touch(activeSessionToken);
-    next();
-  } catch (error) {
-    console.error('Admin middleware error:', normalizeError(error));
-    res.status(500).json({ error: 'Internal server error' });
-  }
-};
-
-router.post('/login', async (req, res) => {
-  try {
-    const result = adminLoginSchema.safeParse(req.body);
-    if (!result.success) {
-      return res.status(400).json({ error: 'Invalid admin login payload', details: result.error.flatten() });
-    }
-    const { email, password } = result.data;
-
-    if (email !== config.admin.email) {
-      return res.status(401).json({ error: 'Invalid admin credentials' });
-    }
-
-    const expectedPassword = config.admin.password;
-    if (password !== expectedPassword) {
-      return res.status(401).json({ error: 'Invalid admin credentials' });
-    }
-
-    const adminUser = await UserModel.findAdminByEmail(email);
-    if (!adminUser) {
-      return res.status(404).json({ error: 'Admin user not found' });
-    }
-
-    const sessionToken = tokenService.generateToken({
-      userId: adminUser.id,
-      email: adminUser.email,
-      role: 'admin',
-      authMethod: 'admin',
-    });
-
-    await AuthSessionModel.create(sessionToken, {
-      userId: adminUser.id,
-      isAdmin: true,
-      sessionType: 'admin',
-    });
-
-    return res.json({
-      success: true,
-      data: {
-        sessionToken,
-        admin: {
-          id: adminUser.id,
-          email: adminUser.email,
-          role: 'admin',
-          isAdmin: true,
-        },
-      },
-    });
-  } catch (error) {
-    console.error('Admin login error:', normalizeError(error));
-    return res.status(500).json({ error: 'Failed to log in as admin' });
-  }
-});
-
-router.get('/stats', authMiddleware, adminMiddleware, async (_req: AuthRequest, res: Response) => {
+router.get('/stats', async (_req: AuthRequest, res: Response) => {
   try {
     await transactionService.reconcileTrackedTransactions();
     const snapshot = await withReadSnapshot(async (client) => {
@@ -177,7 +88,7 @@ router.get('/stats', authMiddleware, adminMiddleware, async (_req: AuthRequest, 
   }
 });
 
-router.get('/users', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/users', async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
@@ -228,7 +139,7 @@ router.get('/users', authMiddleware, adminMiddleware, async (req: AuthRequest, r
   }
 });
 
-router.get('/transactions', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/transactions', async (req: AuthRequest, res: Response) => {
   try {
     await transactionService.reconcileTrackedTransactions();
 
@@ -279,7 +190,7 @@ router.get('/transactions', authMiddleware, adminMiddleware, async (req: AuthReq
   }
 });
 
-router.get('/wallets', authMiddleware, adminMiddleware, async (req: AuthRequest, res: Response) => {
+router.get('/wallets', async (req: AuthRequest, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);

@@ -36,7 +36,7 @@ const CTASection = () => {
               <Button
                 size="lg"
                 className="bg-gradient-to-r from-indigo-500 to-blue-500 text-white hover:from-indigo-600 hover:to-blue-600 font-semibold text-base px-8 h-12 rounded-lg shadow-lg transition transform hover:scale-105 gap-2"
-                onClick={() => navigate('/auth/signup')}
+                onClick={() => navigate('/auth/login')}
               >
                 Create Wallet with Passkey <ArrowRight size={18} />
               </Button>

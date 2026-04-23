@@ -54,6 +54,31 @@ export const UserModel = {
     return result.rows[0] || null;
   },
 
+  async ensureSingleAdminAccount(email: string, walletAddress: string): Promise<User> {
+    let user = await UserModel.findByEmail(email);
+
+    if (!user) {
+      user = await UserModel.create(email, walletAddress);
+    }
+
+    await pool.query(
+      `
+        UPDATE users
+        SET is_admin = CASE WHEN email = $1 THEN TRUE ELSE FALSE END,
+            updated_at = NOW()
+        WHERE is_admin = TRUE OR email = $1
+      `,
+      [email]
+    );
+
+    const adminUser = await UserModel.findByEmail(email);
+    if (!adminUser) {
+      throw new Error('Failed to ensure single admin account');
+    }
+
+    return adminUser;
+  },
+
   async findByWalletAddress(walletAddress: string): Promise<User | null> {
     const result = await pool.query('SELECT * FROM users WHERE wallet_address = $1', [walletAddress]);
     return result.rows[0] || null;

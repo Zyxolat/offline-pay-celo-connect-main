@@ -1,16 +1,15 @@
-import { FormEvent, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Alert, AlertDescription } from '@/components/ui/alert';
 import { AdminStats } from '@/components/admin/AdminStats';
 import { DataTable } from '@/components/admin/DataTable';
 import { RecentActivity } from '@/components/admin/RecentActivity';
 import { useAdminStats } from '@/hooks/useAdminStats';
 import { adminAPI } from '@/services/adminClient';
-import { clearSession, getStoredUser, isAdminUser, storeSession } from '@/lib/auth';
+import { clearSession, hasValidStoredAdminSession } from '@/lib/auth';
+import { authAPI } from '@/services/apiClient';
 
 const formatShortValue = (value?: string | null, head = 6, tail = 4) =>
   value ? `${value.slice(0, head)}...${value.slice(-tail)}` : '-';
@@ -39,95 +38,21 @@ const formatCurrencyValue = (value: unknown) => {
 };
 
 export const AdminDashboard = () => {
-  const [email, setEmail] = useState('admin@offlinepay.local');
-  const [password, setPassword] = useState('admin123');
-  const [authError, setAuthError] = useState('');
-  const [loggingIn, setLoggingIn] = useState(false);
   const [isAdminAuthed, setIsAdminAuthed] = useState(false);
-  const [hasSession, setHasSession] = useState(false);
   const { stats, loading, error } = useAdminStats(isAdminAuthed);
 
   useEffect(() => {
-    const user = getStoredUser();
-    setHasSession(Boolean(user));
-    if (!user) {
-      setIsAdminAuthed(false);
-      return;
-    }
-
-    setIsAdminAuthed(isAdminUser(user));
+    setIsAdminAuthed(hasValidStoredAdminSession());
   }, []);
 
-  const handleAdminLogin = async (event: FormEvent) => {
-    event.preventDefault();
-    setLoggingIn(true);
-    setAuthError('');
-
-    try {
-      const response = await adminAPI.login(email, password);
-      const result = response.data.data;
-
-      storeSession(result.sessionToken, {
-        ...result.admin,
-        authMethod: 'admin',
-      });
-
-      setHasSession(true);
-      setIsAdminAuthed(true);
-    } catch (err: any) {
-      setAuthError(err.response?.data?.error || 'Admin login failed');
-    } finally {
-      setLoggingIn(false);
-    }
-  };
-
   const handleLogout = () => {
+    void authAPI.logout().catch(() => undefined);
     clearSession();
     setIsAdminAuthed(false);
-    setHasSession(false);
   };
 
-  if (!isAdminAuthed && hasSession) {
-    return <Navigate to="/dashboard" replace />;
-  }
-
   if (!isAdminAuthed) {
-    return (
-      <div className="min-h-screen bg-background p-8">
-        <div className="mx-auto max-w-md pt-12">
-          <Card className="p-6">
-            <h1 className="mb-2 text-2xl font-bold text-foreground">Admin Login</h1>
-            <p className="mb-6 text-sm text-muted-foreground">
-              Sign in to access `/admin`.
-            </p>
-
-            {authError && (
-              <Alert variant="destructive" className="mb-4">
-                <AlertDescription>{authError}</AlertDescription>
-              </Alert>
-            )}
-
-            <form className="space-y-4" onSubmit={handleAdminLogin}>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Email</label>
-                <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-              </div>
-              <div>
-                <label className="mb-2 block text-sm font-medium">Password</label>
-                <Input
-                  type="password"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-              <Button className="w-full" disabled={loggingIn} type="submit">
-                {loggingIn ? 'Signing in...' : 'Sign in as admin'}
-              </Button>
-            </form>
-          </Card>
-        </div>
-      </div>
-    );
+    return <Navigate to="/auth/login" replace />;
   }
 
   if (error) {

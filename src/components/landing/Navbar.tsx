@@ -66,7 +66,7 @@ const Navbar = () => {
           <Suspense fallback={<WalletButtonFallback />}>
             <WalletButtonSlot />
           </Suspense>
-          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-6" onClick={() => navigate('/auth/signup')}>
+          <Button size="sm" className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold px-6" onClick={() => navigate('/auth/login')}>
             Get Started
           </Button>
         </div>
@@ -105,7 +105,7 @@ const Navbar = () => {
               <Suspense fallback={<WalletButtonFallback />}>
                 <WalletButtonSlot />
               </Suspense>
-              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold w-full" onClick={() => { navigate('/auth/signup'); setMobileOpen(false); }}>
+              <Button className="bg-primary text-primary-foreground hover:bg-primary/90 font-semibold w-full" onClick={() => { navigate('/auth/login'); setMobileOpen(false); }}>
                 Get Started
               </Button>
             </div>
