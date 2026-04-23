@@ -1,5 +1,5 @@
 [build]
-buildCommand = "npm install && npm run build && npm --prefix server install && npm --prefix server run build"
+buildCommand = "npm install --include=dev && npm run build"
 
 [deploy]
 startCommand = "npm --prefix server run migrate && node server/dist/app.js"
