@@ -304,6 +304,22 @@ const port = isProduction()
   : parsePort(process.env.PORT, 3001);
 const databaseConfig = getDatabaseConfig();
 
+// Warn about missing Celo configuration that will degrade blockchain functionality.
+if (!process.env.CELO_RPC_URL?.trim()) {
+  warnConfig(
+    'CELO_RPC_URL is not set; falling back to the public forno.celo.org endpoint. ' +
+    'Set CELO_RPC_URL to a dedicated RPC node for reliable blockchain indexing.',
+    { fallback: 'https://forno.celo.org' }
+  );
+}
+
+if (!process.env.CELO_WITHDRAW_PRIVATE_KEY?.trim()) {
+  warnConfig(
+    'CELO_WITHDRAW_PRIVATE_KEY is not set; withdrawal transactions will be unavailable. ' +
+    'Set CELO_WITHDRAW_PRIVATE_KEY if the withdrawal feature is required.'
+  );
+}
+
 export const config = {
   port,
   nodeEnv: process.env.NODE_ENV || 'development',

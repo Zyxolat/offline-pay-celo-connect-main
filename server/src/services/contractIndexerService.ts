@@ -1,5 +1,6 @@
 import type { PoolClient } from 'pg';
 import pool from '../config/database.js';
+import { getDatabaseStatus } from '../config/database.js';
 import { ethers, type EventLog, type Log, type TransactionReceipt, type TransactionResponse } from 'ethers';
 import { config } from '../config/index.js';
 import { TIMELOCK_CONTRACT_ABI, type IndexedPaymentEventName, type TimeLockAbiVersion } from '../contracts/timeLock.js';
@@ -913,7 +914,9 @@ export const contractIndexerService = {
           error: normalizeError(error),
         });
 
-        throw error;
+        // Do not re-throw: the error is already recorded in status and logged above.
+        // Re-throwing would cause callers to double-log and would break the startup
+        // flow, surfacing a misleading "DB connection failed" message in app.ts.
       } finally {
         this.syncInFlight = null;
       }
@@ -1227,6 +1230,27 @@ export const contractIndexerService = {
     };
   },
 
+  async waitForDatabase(maxWaitMs = 30_000, pollIntervalMs = 1_000): Promise<boolean> {
+    const deadline = Date.now() + maxWaitMs;
+
+    while (Date.now() < deadline) {
+      const db = getDatabaseStatus();
+      if (db.isReady) {
+        return true;
+      }
+
+      log('INFO', 'Contract indexer waiting for database to become ready', {
+        phase: db.phase,
+        attempts: db.attempts,
+        remainingMs: deadline - Date.now(),
+      });
+
+      await sleep(pollIntervalMs);
+    }
+
+    return getDatabaseStatus().isReady;
+  },
+
   async start() {
     if (this.isStarted) {
       return;
@@ -1235,8 +1259,45 @@ export const contractIndexerService = {
     this.isStarted = true;
     this.status.started = true;
 
-    await this.initializeCheckpointWindow();
+    // Validate Celo RPC configuration before attempting any chain calls.
+    const rpcUrl = config.celo.rpcUrl;
+    if (!rpcUrl || rpcUrl === 'https://forno.celo.org') {
+      log('WARN', 'CELO_RPC_URL is not explicitly set; using public fallback endpoint (forno.celo.org). Set CELO_RPC_URL for a dedicated RPC node.', {
+        rpcUrl,
+      });
+    }
+
+    if (!config.celo.withdrawPrivateKey) {
+      log('WARN', 'CELO_WITHDRAW_PRIVATE_KEY is not set; withdrawal functionality will be unavailable.');
+    }
+
+    // Ensure the database is ready before touching any DB models.
+    const dbReady = await this.waitForDatabase(30_000);
+    if (!dbReady) {
+      log('ERROR', 'Contract indexer could not start: database is not ready after 30s. Polling will retry.', {
+        dbPhase: getDatabaseStatus().phase,
+      });
+      // Still start polling so the indexer recovers once the DB comes up.
+      this.startPollingPendingTransactions();
+      this.startSyncPolling();
+      this.startIntegrityChecks();
+      return;
+    }
+
+    // Load the last-processed-block checkpoint from the DB.
+    try {
+      await this.initializeCheckpointWindow();
+    } catch (error) {
+      log('ERROR', 'Contract indexer failed to load checkpoint from DB; will start from configured start block', {
+        ...normalizeError(error),
+        configuredStartBlock: config.celo.eventIndexerStartBlock,
+      });
+      // Leave nextSyncFromBlock as null — syncConfirmedBlocks will fall back to eventIndexerStartBlock.
+    }
+
+    // Run an initial sync. Errors are caught and recorded inside syncConfirmedBlocks.
     await this.syncConfirmedBlocks('startup');
+
     await this.connectWebSocketProvider();
 
     this.startPollingPendingTransactions();
