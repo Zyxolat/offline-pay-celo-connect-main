@@ -285,7 +285,6 @@ export function startServer() {
     void (async () => {
       try {
         await connectDatabaseWithRetry();
-        await contractIndexerService.start();
       } catch (error) {
         if (isMissingRelationError(error)) {
           log('ERROR', 'Database not initialized. Run npm run migrate', {
@@ -296,6 +295,17 @@ export function startServer() {
         }
 
         log('ERROR', 'DB connection failed', normalizeError(error));
+        return;
+      }
+
+      try {
+        await contractIndexerService.start();
+      } catch (error) {
+        // contractIndexerService.start() is designed to be non-throwing — sync
+        // errors are caught internally and recorded in indexer status. This
+        // catch is a last-resort safety net so an unexpected error here does
+        // not surface as a misleading "DB connection failed" message.
+        log('ERROR', 'Contract indexer failed to start', normalizeError(error));
       }
     })();
   });
