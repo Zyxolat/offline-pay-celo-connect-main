@@ -3,19 +3,9 @@ import { config } from '../config/index.js';
 import { AuthSessionModel } from '../models/AuthSession.js';
 import { tokenService } from '../services/tokenService.js';
 
-export interface AuthRequest extends Request {
-  user?: {
-    userId: string;
-    email: string;
-    role: 'admin' | 'user';
-    authMethod: 'google' | 'passkey' | 'admin';
-    isAdmin?: boolean;
-  };
-}
-
 const normalizeIp = (value?: string | null) => value?.replace(/^::ffff:/, '') ?? '';
 
-export const authMiddleware = (req: AuthRequest, res: Response, next: NextFunction) => {
+export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   const token = tokenService.parseAuthHeader(authHeader);
 
@@ -39,7 +29,7 @@ export const authMiddleware = (req: AuthRequest, res: Response, next: NextFuncti
   next();
 };
 
-export const requireAdminAuth = async (req: AuthRequest, res: Response, next: NextFunction) => {
+export const requireAdminAuth = async (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   const token = tokenService.parseAuthHeader(authHeader);
 

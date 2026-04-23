@@ -1,8 +1,7 @@
 import bcrypt from 'bcryptjs';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { z } from 'zod';
 import { config } from '../config/index.js';
-import { AuthRequest } from '../middleware/auth.js';
 import { AuthSessionModel } from '../models/AuthSession.js';
 import { UserModel } from '../models/User.js';
 import { tokenService } from '../services/tokenService.js';
@@ -19,7 +18,7 @@ const disabledAuthMessage = 'Unauthorized';
 
 const normalizeIp = (value?: string | null) => value?.replace(/^::ffff:/, '') ?? '';
 
-const assertAdminIpAllowed = (req: AuthRequest) => {
+const assertAdminIpAllowed = (req: Request) => {
   const allowedIps = config.admin.allowedIps.map((ip) => normalizeIp(ip));
   if (allowedIps.length === 0) {
     return true;
@@ -29,7 +28,7 @@ const assertAdminIpAllowed = (req: AuthRequest) => {
 };
 
 export const authController = {
-  async adminLogin(req: AuthRequest, res: Response) {
+  async adminLogin(req: Request, res: Response) {
     try {
       const payload = validateWithSchema(res, adminLoginSchema, req.body);
       if (!payload) {
@@ -85,11 +84,11 @@ export const authController = {
     }
   },
 
-  async authDisabled(_req: AuthRequest, res: Response) {
+  async authDisabled(_req: Request, res: Response) {
     errorResponse(res, disabledAuthMessage, 403);
   },
 
-  async logout(req: AuthRequest, res: Response) {
+  async logout(req: Request, res: Response) {
     try {
       const token = tokenService.parseAuthHeader(req.headers.authorization);
       if (token) {

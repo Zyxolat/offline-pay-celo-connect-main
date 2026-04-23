@@ -1,7 +1,7 @@
-import { Response, Router } from 'express';
+import { Request, Response, Router } from 'express';
 import type { PoolClient } from 'pg';
 import pool from '../config/database.js';
-import { AuthRequest, requireAdminAuth } from '../middleware/auth.js';
+import { requireAdminAuth } from '../middleware/auth.js';
 import { transactionService } from '../services/transactionService.js';
 import { normalizeError } from '../utils/logger.js';
 
@@ -25,7 +25,7 @@ async function withReadSnapshot<T>(work: (client: PoolClient) => Promise<T>): Pr
 
 router.use(requireAdminAuth);
 
-router.get('/stats', async (_req: AuthRequest, res: Response) => {
+router.get('/stats', async (_req: Request, res: Response) => {
   try {
     await transactionService.reconcileTrackedTransactions();
     const snapshot = await withReadSnapshot(async (client) => {
@@ -88,7 +88,7 @@ router.get('/stats', async (_req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/users', async (req: AuthRequest, res: Response) => {
+router.get('/users', async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);
@@ -139,7 +139,7 @@ router.get('/users', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/transactions', async (req: AuthRequest, res: Response) => {
+router.get('/transactions', async (req: Request, res: Response) => {
   try {
     await transactionService.reconcileTrackedTransactions();
 
@@ -190,7 +190,7 @@ router.get('/transactions', async (req: AuthRequest, res: Response) => {
   }
 });
 
-router.get('/wallets', async (req: AuthRequest, res: Response) => {
+router.get('/wallets', async (req: Request, res: Response) => {
   try {
     const page = parseInt(req.query.page as string) || 1;
     const limit = Math.min(parseInt(req.query.limit as string) || 50, 100);

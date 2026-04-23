@@ -1,5 +1,4 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.js';
+import { Request, Response } from 'express';
 import { transactionService } from '../services/transactionService.js';
 import { ChallengeModel } from '../models/Challenge.js';
 import { celoService } from '../services/celoService.js';
@@ -32,7 +31,7 @@ const submitPaymentSchema = z.object({
 });
 
 export const paymentController = {
-  async authorizeChallenge(req: AuthRequest, res: Response) {
+  async authorizeChallenge(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
@@ -78,7 +77,7 @@ export const paymentController = {
     }
   },
 
-  async authorizeVerify(req: AuthRequest, res: Response) {
+  async authorizeVerify(req: Request, res: Response) {
     try {
       const payload = validateWithSchema(res, authorizeVerifySchema, req.body);
       if (!payload) {
@@ -110,7 +109,7 @@ export const paymentController = {
     }
   },
 
-  async submitPayment(req: AuthRequest, res: Response) {
+  async submitPayment(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);

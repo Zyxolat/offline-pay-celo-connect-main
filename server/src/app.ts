@@ -1,7 +1,6 @@
 import express, { Request, Response, NextFunction } from 'express';
 import crypto from 'node:crypto';
 import type { Server } from 'node:http';
-import { pathToFileURL } from 'node:url';
 import cors from 'cors';
 import helmet from 'helmet';
 import morgan from 'morgan';
@@ -357,13 +356,7 @@ process.on('SIGTERM', () => void shutdown('SIGTERM'));
 process.on('SIGINT', () => void shutdown('SIGINT'));
 
 function shouldAutoStart() {
-  const entryArg = process.argv[1];
-
-  if (!entryArg) {
-    return false;
-  }
-
-  return import.meta.url === pathToFileURL(entryArg).href;
+  return require.main === module;
 }
 
 export function bootServer() {

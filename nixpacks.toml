@@ -1,2 +1,8 @@
 [phases.install]
-cmds = ["bun install"]
+cmds = ["npm ci"]
+
+[phases.build]
+cmds = ["cd server && npm ci && npm run build"]
+
+[start]
+cmd = "cd server && npm run start"

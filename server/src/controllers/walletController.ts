@@ -1,5 +1,4 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.js';
+import { Request, Response } from 'express';
 import { walletService } from '../services/walletService.js';
 import { normalizeError } from '../utils/logger.js';
 import { successResponse, errorResponse, validateWithSchema } from '../utils/validators.js';
@@ -27,7 +26,7 @@ const withdrawSchema = z.object({
 });
 
 export const walletController = {
-  async getBalance(req: AuthRequest, res: Response) {
+  async getBalance(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
@@ -41,7 +40,7 @@ export const walletController = {
     }
   },
 
-  async getAddress(req: AuthRequest, res: Response) {
+  async getAddress(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
@@ -55,7 +54,7 @@ export const walletController = {
     }
   },
 
-  async getTransactions(req: AuthRequest, res: Response) {
+  async getTransactions(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
@@ -76,7 +75,7 @@ export const walletController = {
     }
   },
 
-  async syncTransaction(req: AuthRequest, res: Response) {
+  async syncTransaction(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
@@ -108,7 +107,7 @@ export const walletController = {
     }
   },
 
-  async withdraw(req: AuthRequest, res: Response) {
+  async withdraw(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);

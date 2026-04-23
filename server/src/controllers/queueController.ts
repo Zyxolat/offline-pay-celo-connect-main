@@ -1,5 +1,4 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.js';
+import { Request, Response } from 'express';
 import { queueService } from '../services/queueService.js';
 import { normalizeError } from '../utils/logger.js';
 import { successResponse, errorResponse, validateWithSchema } from '../utils/validators.js';
@@ -19,7 +18,7 @@ const syncQueueSchema = z.object({
 });
 
 export const queueController = {
-  async addToQueue(req: AuthRequest, res: Response) {
+  async addToQueue(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
@@ -41,7 +40,7 @@ export const queueController = {
     }
   },
 
-  async getPending(req: AuthRequest, res: Response) {
+  async getPending(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
@@ -55,7 +54,7 @@ export const queueController = {
     }
   },
 
-  async sync(req: AuthRequest, res: Response) {
+  async sync(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);

@@ -1,5 +1,4 @@
-import { Response } from 'express';
-import { AuthRequest } from '../middleware/auth.js';
+import { Request, Response } from 'express';
 import { TransactionModel } from '../models/Transaction.js';
 import { UserModel } from '../models/User.js';
 import { normalizeError } from '../utils/logger.js';
@@ -17,7 +16,7 @@ const batchStatusQuerySchema = z.object({
 });
 
 export const transactionController = {
-  async getDetail(req: AuthRequest, res: Response) {
+  async getDetail(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
@@ -59,7 +58,7 @@ export const transactionController = {
     }
   },
 
-  async getStatusBatch(req: AuthRequest, res: Response) {
+  async getStatusBatch(req: Request, res: Response) {
     try {
       if (!req.user) {
         return errorResponse(res, 'Unauthorized', 401);
