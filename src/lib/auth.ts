@@ -22,10 +22,20 @@ function getSessionStorage(): Storage | null {
   }
 }
 
+const clearSessionStorage = (storage: Storage) => {
+  try {
+    storage.removeItem('sessionToken');
+    storage.removeItem('user');
+  } catch (error) {
+    console.error('[auth] Failed to clear session.', error);
+  }
+};
+
 export const getStoredToken = () => getSessionStorage()?.getItem('sessionToken') ?? null;
 
 export const getStoredUser = (): SessionUser | null => {
-  const raw = getSessionStorage()?.getItem('user');
+  const storage = getSessionStorage();
+  const raw = storage?.getItem('user');
   if (!raw) {
     return null;
   }
@@ -33,7 +43,10 @@ export const getStoredUser = (): SessionUser | null => {
   try {
     return JSON.parse(raw) as SessionUser;
   } catch (error) {
-    console.error('[auth] Failed to parse stored user session.', error);
+    console.error('[auth] Failed to parse stored user session. Clearing invalid session state.', error);
+    if (storage) {
+      clearSessionStorage(storage);
+    }
     return null;
   }
 };
@@ -60,18 +73,15 @@ export const hasValidStoredAdminSession = () => {
   return Boolean(token && isAdminUser(user));
 };
 
+export const hasStoredSession = () => Boolean(getStoredToken() && getStoredUser());
+
 export const clearSession = () => {
   const storage = getSessionStorage();
   if (!storage) {
     return;
   }
 
-  try {
-    storage.removeItem('sessionToken');
-    storage.removeItem('user');
-  } catch (error) {
-    console.error('[auth] Failed to clear session.', error);
-  }
+  clearSessionStorage(storage);
 };
 
 export const isAdminUser = (user: SessionUser | null) =>

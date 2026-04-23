@@ -18,12 +18,13 @@ export const CredentialModel = {
     credentialId: string,
     publicKey: Buffer,
     credentialPublicKey: Record<string, unknown>,
-    transports: string[] = []
+    transports: string[] = [],
+    counter = 0
   ): Promise<Credential> {
     const id = randomUUID();
     const result = await pool.query(
       'INSERT INTO credentials (id, user_id, credential_id, public_key, credential_public_key, transports, counter, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *',
-      [id, userId, credentialId, publicKey, JSON.stringify(credentialPublicKey), transports, 0, new Date()]
+      [id, userId, credentialId, publicKey, JSON.stringify(credentialPublicKey), transports, counter, new Date()]
     );
     return result.rows[0];
   },

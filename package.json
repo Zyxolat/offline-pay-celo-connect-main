@@ -9,8 +9,8 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && npm run build:server",
-    "build:server": "npm --prefix server ci && npm --prefix server run build",
+    "build": "VITE_CJS_IGNORE_WARNING=true npm_config_loglevel=error vite build && npm run build:server",
+    "build:server": "npm --prefix server ci --loglevel=error --no-fund --no-audit && npm --prefix server run build --loglevel=error",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
     "preview": "vite preview",

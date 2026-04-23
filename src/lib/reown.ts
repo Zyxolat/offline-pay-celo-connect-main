@@ -7,18 +7,24 @@ import { getAddress } from "viem";
 import { getAccount, watchAccount } from "wagmi/actions";
 
 import { getWalletConnectProjectId } from "@/config/env";
+import { getMobileWalletEnvironment, resolveManualWalletOpenUrl } from "@/lib/wallet";
 import { logWalletConnection } from "@/lib/walletConnectionDebug";
 
 const projectId = getWalletConnectProjectId();
-const WALLETCONNECT_APP_URL = "https://offline-pay-celo-production.up.railway.app";
-const WALLETCONNECT_APP_ICON = `${WALLETCONNECT_APP_URL}/logo.png`;
 
-export const walletMetadata = {
-  name: "OfflinePay",
-  description: "Offline crypto payments",
-  url: WALLETCONNECT_APP_URL,
-  icons: [WALLETCONNECT_APP_ICON],
-} as const;
+const getWalletMetadata = () => {
+  const origin =
+    typeof window !== "undefined" && window.location.origin
+      ? window.location.origin
+      : "http://localhost:5173";
+
+  return {
+    name: "OfflinePay",
+    description: "Offline crypto payments on Celo",
+    url: origin,
+    icons: [`${origin}/favicon.ico`],
+  } as const;
+};
 
 export const supportedNetworks = [celo] as const;
 
@@ -26,6 +32,7 @@ type ReownSingleton = {
   appKit: ReturnType<typeof createAppKit>;
   queryClient: QueryClient;
   wagmiAdapter: WagmiAdapter;
+  walletMetadata: ReturnType<typeof getWalletMetadata>;
 };
 
 const globalReown = globalThis as typeof globalThis & {
@@ -35,6 +42,7 @@ const globalReown = globalThis as typeof globalThis & {
 const reownSingleton =
   globalReown.__offlinePayReown ??
   (() => {
+    const walletMetadata = getWalletMetadata();
     const queryClient = new QueryClient();
     const wagmiAdapter = new WagmiAdapter({
       projectId,
@@ -81,13 +89,14 @@ const reownSingleton =
       appKit,
       queryClient,
       wagmiAdapter,
+      walletMetadata,
     };
 
     globalReown.__offlinePayReown = singleton;
     return singleton;
   })();
 
-export const { appKit, queryClient, wagmiAdapter } = reownSingleton;
+export const { appKit, queryClient, wagmiAdapter, walletMetadata } = reownSingleton;
 
 export const getWalletConnectionErrorMessage = (error: unknown) => {
   const message = error instanceof Error ? error.message : String(error ?? "");
@@ -95,6 +104,24 @@ export const getWalletConnectionErrorMessage = (error: unknown) => {
 };
 
 export const wagmiConfig = wagmiAdapter.wagmiConfig;
+
+export const getLatestWalletConnectUri = () => ConnectionController.state.wcUri ?? null;
+
+export const getLatestWalletConnectDeepLink = () => ConnectionController.state.wcLinking?.href ?? null;
+
+export const getWalletManualOpenUrl = (walletDeepLink: string | undefined, currentUrl: string) => {
+  const generatedDeepLink = getLatestWalletConnectDeepLink();
+  if (generatedDeepLink) {
+    return generatedDeepLink;
+  }
+
+  return resolveManualWalletOpenUrl(
+    walletDeepLink,
+    currentUrl,
+    getMobileWalletEnvironment(),
+    getLatestWalletConnectUri(),
+  );
+};
 
 export const openWalletConnectionModal = (options?: { uri?: string }) =>
   appKit.open({

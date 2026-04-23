@@ -5,18 +5,39 @@ import { tokenService } from '../services/tokenService.js';
 
 const normalizeIp = (value?: string | null) => value?.replace(/^::ffff:/, '') ?? '';
 
-export const authMiddleware = (req: Request, res: Response, next: NextFunction) => {
+const respondUnauthorized = (res: Response, reason: 'missing' | 'expired' | 'invalid' | 'session') => {
+  const messageByReason = {
+    missing: 'Unauthorized: Missing token',
+    expired: 'Unauthorized: Token expired',
+    invalid: 'Unauthorized: Invalid token',
+    session: 'Unauthorized: Session expired',
+  } as const;
+
+  return res.status(401).json({ error: messageByReason[reason] });
+};
+
+const authenticateRequest = async (req: Request, res: Response) => {
   const authHeader = req.headers.authorization;
   const token = tokenService.parseAuthHeader(authHeader);
 
   if (!token) {
-    return res.status(401).json({ error: 'Unauthorized: Missing token' });
+    respondUnauthorized(res, 'missing');
+    return null;
   }
 
-  const payload = tokenService.verifyToken(token);
-  if (!payload) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
+  const verification = tokenService.verifyTokenDetailed(token);
+  if (!verification.valid) {
+    respondUnauthorized(res, verification.reason);
+    return null;
   }
+
+  const session = await AuthSessionModel.findActiveSession(token);
+  if (!session) {
+    respondUnauthorized(res, 'session');
+    return null;
+  }
+
+  const payload = verification.payload;
 
   req.user = {
     userId: payload.userId,
@@ -26,35 +47,44 @@ export const authMiddleware = (req: Request, res: Response, next: NextFunction) 
     isAdmin: payload.role === 'admin',
   };
 
+  await AuthSessionModel.touch(token);
+
+  return {
+    payload,
+    session,
+    token,
+  };
+};
+
+export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {
+  const authenticated = await authenticateRequest(req, res);
+  if (!authenticated) {
+    return;
+  }
+
   next();
 };
 
 export const requireAdminAuth = async (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
-  const token = tokenService.parseAuthHeader(authHeader);
-
-  if (!token) {
-    return res.status(401).json({ error: 'Unauthorized: Missing token' });
+  const authenticated = await authenticateRequest(req, res);
+  if (!authenticated) {
+    return;
   }
 
-  const payload = tokenService.verifyToken(token);
-  if (!payload) {
-    return res.status(401).json({ error: 'Unauthorized: Invalid token' });
-  }
+  const { payload, session } = authenticated;
 
   if (payload.email !== config.admin.email || payload.role !== 'admin') {
-    return res.status(403).json({ error: 'Unauthorized' });
+    return res.status(403).json({ error: 'Forbidden' });
   }
 
   const allowedIps = config.admin.allowedIps.map((ip) => normalizeIp(ip));
   const requestIp = normalizeIp(req.ip);
   if (allowedIps.length > 0 && !allowedIps.includes(requestIp)) {
-    return res.status(403).json({ error: 'Unauthorized' });
+    return res.status(403).json({ error: 'Forbidden' });
   }
 
-  const session = await AuthSessionModel.findActiveSession(token);
   if (!session || !session.is_admin) {
-    return res.status(403).json({ error: 'Unauthorized' });
+    return res.status(403).json({ error: 'Forbidden' });
   }
 
   req.user = {
@@ -65,6 +95,5 @@ export const requireAdminAuth = async (req: Request, res: Response, next: NextFu
     isAdmin: true,
   };
 
-  await AuthSessionModel.touch(token);
   next();
 };

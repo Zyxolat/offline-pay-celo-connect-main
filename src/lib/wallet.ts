@@ -67,27 +67,34 @@ export const getMobileWalletEnvironment = (): MobileWalletEnvironment => {
   };
 };
 
-const withEncodedUrl = (template: string, url: string) =>
+const withEncodedValue = (template: string, placeholder: 'url' | 'uri', value: string) =>
   template
-    .replaceAll('{{url}}', encodeURIComponent(url))
-    .replaceAll('{url}', encodeURIComponent(url))
-    .replaceAll('%7B%7Burl%7D%7D', encodeURIComponent(url))
-    .replaceAll('%7Burl%7D', encodeURIComponent(url));
+    .replaceAll(`{{${placeholder}}}`, encodeURIComponent(value))
+    .replaceAll(`{${placeholder}}`, encodeURIComponent(value))
+    .replaceAll(`%7B%7B${placeholder}%7D%7D`, encodeURIComponent(value))
+    .replaceAll(`%7B${placeholder}%7D`, encodeURIComponent(value));
 
 export const resolveManualWalletOpenUrl = (
   deepLink: string | undefined,
   currentUrl: string,
   browser = getMobileWalletEnvironment(),
+  walletConnectUri?: string | null,
 ) => {
   if (!deepLink || browser.preferWalletConnectModalOnly) {
     return null;
   }
 
-  if (deepLink.includes('{url}') || deepLink.includes('{{url}}') || deepLink.includes('%7Burl%7D')) {
-    return withEncodedUrl(deepLink, currentUrl);
+  let resolvedDeepLink = deepLink;
+
+  if (walletConnectUri && /(?:\{|\%7B)(?:\{)?uri(?:\})?(?:\})?/i.test(resolvedDeepLink)) {
+    resolvedDeepLink = withEncodedValue(resolvedDeepLink, 'uri', walletConnectUri);
   }
 
-  return deepLink;
+  if (/(?:\{|\%7B)(?:\{)?url(?:\})?(?:\})?/i.test(resolvedDeepLink)) {
+    resolvedDeepLink = withEncodedValue(resolvedDeepLink, 'url', currentUrl);
+  }
+
+  return resolvedDeepLink;
 };
 
 export const getLastWalletType = () => {

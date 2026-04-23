@@ -4,8 +4,8 @@ import { getAddress } from "viem";
 import { useAccount } from "wagmi";
 import { getAccount, watchAccount } from "wagmi/actions";
 
-import { wagmiConfig } from "@/lib/reown";
-import { getMobileWalletEnvironment, resolveManualWalletOpenUrl } from "@/lib/wallet";
+import { getWalletManualOpenUrl, wagmiConfig } from "@/lib/reown";
+import { getMobileWalletEnvironment } from "@/lib/wallet";
 import { logWalletConnection } from "@/lib/walletConnectionDebug";
 
 export type WalletConnectionStatus = "idle" | "connecting" | "connected" | "failed";
@@ -316,10 +316,9 @@ export const useWalletConnection = (timeoutMs = DEFAULT_TIMEOUT_MS) => {
       return null;
     }
 
-    const resolvedUrl = resolveManualWalletOpenUrl(
+    const resolvedUrl = getWalletManualOpenUrl(
       wallet?.walletInfo?.deepLink,
       window.location.href,
-      browser,
     );
 
     if (wallet) {

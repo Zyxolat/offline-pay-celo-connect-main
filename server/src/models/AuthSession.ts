@@ -54,6 +54,10 @@ export const AuthSessionModel = {
     return result.rows[0] || null;
   },
 
+  async revokeUserSessions(userId: string) {
+    await pool.query('DELETE FROM auth_sessions WHERE user_id = $1 AND is_admin = FALSE', [userId]);
+  },
+
   async revoke(sessionToken: string) {
     await pool.query('DELETE FROM auth_sessions WHERE session_token = $1', [sessionToken]);
   },

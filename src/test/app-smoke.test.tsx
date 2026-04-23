@@ -36,7 +36,7 @@ describe("App smoke", () => {
     const view = render(<App />);
 
     expect(await view.findByText(/welcome back/i)).toBeInTheDocument();
-    expect(view.getByText(/google oauth/i)).toBeInTheDocument();
+    expect(view.getByRole("button", { name: /continue with passkey/i })).toBeInTheDocument();
   });
 
   it("renders the learn more page without crashing", async () => {
@@ -57,14 +57,16 @@ describe("App smoke", () => {
     expect(view.getByRole("button", { name: /sign in as admin/i })).toBeInTheDocument();
   });
 
-  it("renders the dashboard even with a corrupted stored user payload", async () => {
+  it("falls back to login when the stored user payload is corrupted", async () => {
     sessionStorage.setItem("sessionToken", "test-session-token");
     sessionStorage.setItem("user", "{broken-json");
     window.history.pushState({}, "", "/dashboard");
 
     const view = render(<App />);
 
-    expect(await view.findByText(/wallet dashboard/i)).toBeInTheDocument();
+    expect(await view.findByText(/welcome back/i)).toBeInTheDocument();
+    expect(sessionStorage.getItem("sessionToken")).toBeNull();
+    expect(sessionStorage.getItem("user")).toBeNull();
   });
 
   it("renders the send page even with a corrupted offline wallet key", async () => {

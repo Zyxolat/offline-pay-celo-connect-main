@@ -15,6 +15,14 @@ vi.mock("@reown/appkit/react", () => ({
     open: reownOpenMock,
     close: vi.fn(),
   }),
+  useAppKitEvents: () => ({ data: null }),
+  useAppKitState: () => ({
+    open: false,
+    connectingWallet: null,
+    activeChain: null,
+    loading: false,
+    initialized: true,
+  }),
 }));
 
 const originalConsoleError = console.error;

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Suspense, lazy, useEffect, useState } from "react";
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from "react-router-dom";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { Toaster } from "@/components/ui/toaster";
@@ -10,21 +10,38 @@ import {
   RuntimeErrorFallback,
   normalizeRuntimeError,
 } from "@/components/ErrorBoundary";
-import Index from "./pages/Index.tsx";
-import NotFound from "./pages/NotFound.tsx";
-import { AuthPages } from "./pages/Auth/index.tsx";
-import { Dashboard } from "./pages/Dashboard.tsx";
-import { SendPage } from "./pages/Send.tsx";
-import { ReceivePage } from "./pages/Receive.tsx";
-import { TransactionsPage, TransactionDetailPage } from "./pages/Transactions.tsx";
-import { SettingsPage } from "./pages/Settings.tsx";
-import { ScanPage } from "./pages/Scan.tsx";
-import { AdminDashboard } from "./pages/AdminDashboard.tsx";
-import LearnMorePage from "./pages/LearnMore.tsx";
-import WithdrawPage from "./pages/Withdraw.tsx";
 import WalletProviders from "./providers/WalletProviders";
 import { logWalletConnection } from "@/lib/walletConnectionDebug";
 import { resumeWalletConnectionFromUri } from "@/lib/reown";
+
+const Index = lazy(() => import("./pages/Index.tsx"));
+const NotFound = lazy(() => import("./pages/NotFound.tsx"));
+const LearnMorePage = lazy(() => import("./pages/LearnMore.tsx"));
+const AuthPages = lazy(() => import("./pages/Auth/index.tsx").then((module) => ({ default: module.AuthPages })));
+const Dashboard = lazy(() => import("./pages/Dashboard.tsx").then((module) => ({ default: module.Dashboard })));
+const SendPage = lazy(() => import("./pages/Send.tsx").then((module) => ({ default: module.SendPage })));
+const ReceivePage = lazy(() => import("./pages/Receive.tsx").then((module) => ({ default: module.ReceivePage })));
+const TransactionsPage = lazy(() =>
+  import("./pages/Transactions.tsx").then((module) => ({ default: module.TransactionsPage })),
+);
+const TransactionDetailPage = lazy(() =>
+  import("./pages/Transactions.tsx").then((module) => ({ default: module.TransactionDetailPage })),
+);
+const SettingsPage = lazy(() => import("./pages/Settings.tsx").then((module) => ({ default: module.SettingsPage })));
+const ScanPage = lazy(() => import("./pages/Scan.tsx").then((module) => ({ default: module.ScanPage })));
+const AdminDashboard = lazy(() =>
+  import("./pages/AdminDashboard.tsx").then((module) => ({ default: module.AdminDashboard })),
+);
+const WithdrawPage = lazy(() => import("./pages/Withdraw.tsx").then((module) => ({ default: module.default })));
+
+const RouteLoadingFallback = () => (
+  <div className="flex min-h-screen items-center justify-center px-6 text-center">
+    <div className="space-y-2">
+      <p className="text-sm font-medium text-slate-900">Loading OfflinePay...</p>
+      <p className="text-sm text-slate-600">Preparing the next screen.</p>
+    </div>
+  </div>
+);
 
 const WalletCallbackRoute = () => {
   const location = useLocation();
@@ -104,7 +121,7 @@ const SafeRoute = ({
       scope={`route:${routeName}`}
       title={`${routeName} failed to render`}
     >
-      {children}
+      <Suspense fallback={<RouteLoadingFallback />}>{children}</Suspense>
     </RuntimeErrorBoundary>
   );
 };

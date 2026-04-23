@@ -11,6 +11,10 @@ export interface TokenPayload {
   exp?: number;
 }
 
+export type TokenVerificationResult =
+  | { valid: true; payload: TokenPayload }
+  | { valid: false; reason: 'expired' | 'invalid' };
+
 export const tokenService = {
   generateToken(payload: Omit<TokenPayload, 'iat' | 'exp'>): string {
     return jwt.sign(payload as object, config.jwt.secret as string, {
@@ -19,12 +23,31 @@ export const tokenService = {
   },
 
   verifyToken(token: string): TokenPayload | null {
+    const result = this.verifyTokenDetailed(token);
+    return result.valid ? result.payload : null;
+  },
+
+  verifyTokenDetailed(token: string): TokenVerificationResult {
     try {
       const decoded = jwt.verify(token, config.jwt.secret) as TokenPayload;
-      return decoded;
+      return {
+        valid: true,
+        payload: decoded,
+      };
     } catch (error) {
       console.error('Token verification failed:', normalizeError(error));
-      return null;
+
+      if (error instanceof jwt.TokenExpiredError) {
+        return {
+          valid: false,
+          reason: 'expired',
+        };
+      }
+
+      return {
+        valid: false,
+        reason: 'invalid',
+      };
     }
   },
 

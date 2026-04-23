@@ -10,8 +10,24 @@ const withApiErrorLogging = async <T>(label: string, request: Promise<T>) => {
 };
 
 export const authAPI = {
+  adminLogin: (email: string, password: string) =>
+    withApiErrorLogging('adminLogin', api.post('/auth/admin/login', { email, password })),
   login: (email: string, password: string) =>
     withApiErrorLogging('login', api.post('/auth/login', { email, password })),
+  beginPasskeyRegistration: (email: string) =>
+    withApiErrorLogging('beginPasskeyRegistration', api.post('/auth/webauthn/register/options', { email })),
+  completePasskeyRegistration: (email: string, credential: unknown) =>
+    withApiErrorLogging(
+      'completePasskeyRegistration',
+      api.post('/auth/webauthn/register/verify', { email, credential }),
+    ),
+  beginPasskeyLogin: (email: string) =>
+    withApiErrorLogging('beginPasskeyLogin', api.post('/auth/webauthn/login/options', { email })),
+  completePasskeyLogin: (email: string, credential: unknown) =>
+    withApiErrorLogging(
+      'completePasskeyLogin',
+      api.post('/auth/webauthn/login/verify', { email, credential }),
+    ),
   logout: () => withApiErrorLogging('logout', api.post('/auth/logout')),
 };
 

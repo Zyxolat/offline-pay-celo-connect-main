@@ -33,22 +33,35 @@ api.interceptors.response.use(
       error.message = `Cannot reach the API server at ${API_BASE_URL}.`;
     }
 
-    if (error.response?.status === 401 || error.response?.status === 403) {
+    if (error.response?.status === 401) {
       const path = window.location.pathname;
       const isAdminRoute = path.startsWith('/admin');
       const isAdminApi = String(error.config?.url || '').includes('/admin/');
       const isAuthLogin = String(error.config?.url || '').includes('/auth/login');
+      const isAdminLogin = String(error.config?.url || '').includes('/auth/admin/login');
 
-      if (!isAuthLogin) {
+      if (!isAuthLogin && !isAdminLogin) {
         clearSession();
       }
 
       if (isAdminRoute || isAdminApi) {
         window.location.href = '/auth/login';
-      } else if (!isAuthLogin) {
+      } else if (!isAuthLogin && !isAdminLogin) {
         window.location.href = '/auth/login';
       }
     }
+
+    if (error.response?.status === 403) {
+      const path = window.location.pathname;
+      const isAdminRoute = path.startsWith('/admin');
+      const isAdminApi = String(error.config?.url || '').includes('/admin/');
+
+      if (isAdminRoute || isAdminApi) {
+        clearSession();
+        window.location.href = '/auth/login';
+      }
+    }
+
     return Promise.reject(error);
   }
 );

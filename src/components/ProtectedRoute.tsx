@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { Loader2 } from 'lucide-react';
-import { getStoredToken, getStoredUser, hasValidStoredAdminSession, isAdminUser } from '@/lib/auth';
+import { getStoredToken, getStoredUser, hasStoredSession } from '@/lib/auth';
 
 interface ProtectedRouteProps {
   children: React.ReactNode;
@@ -12,7 +12,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    setIsAuthenticated(hasValidStoredAdminSession());
+    setIsAuthenticated(hasStoredSession());
   }, []);
 
   if (isAuthenticated === null) {
@@ -27,13 +27,8 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     return <Navigate to="/auth/login" replace />;
   }
 
-  const user = getStoredUser();
-  if (!getStoredToken() || !isAdminUser(user)) {
+  if (!getStoredToken() || !getStoredUser()) {
     return <Navigate to="/auth/login" replace state={{ from: location }} />;
-  }
-
-  if (location.pathname !== '/admin') {
-    return <Navigate to="/admin" replace />;
   }
 
   return <>{children}</>;

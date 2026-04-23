@@ -1,9 +1,24 @@
-import { defineConfig } from "vite";
+import { createLogger, defineConfig } from "vite";
 import react from "@vitejs/plugin-react-swc";
 import path from "path";
 
+const logger = createLogger();
+const loggerWarn = logger.warn;
+
+logger.warn = (msg, options) => {
+  if (
+    msg.includes("contains an annotation that Rollup cannot interpret due to the position of the comment") ||
+    msg.includes("Circular chunk:")
+  ) {
+    return;
+  }
+
+  loggerWarn(msg, options);
+};
+
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({
+  customLogger: logger,
   optimizeDeps: {
     include: ["wagmi", "viem", "ox"],
   },
@@ -25,20 +40,36 @@ export default defineConfig(({ mode }) => ({
   build: {
     chunkSizeWarningLimit: 2000,
     rollupOptions: {
+      onwarn(warning, warn) {
+        if (
+          warning.message.includes("contains an annotation that Rollup cannot interpret due to the position of the comment") ||
+          warning.message.includes("Circular chunk:")
+        ) {
+          return;
+        }
+
+        warn(warning);
+      },
       output: {
         manualChunks(id) {
           if (!id.includes("node_modules")) {
             return undefined;
           }
 
-          if (
-            id.includes("/@walletconnect/") ||
-            id.includes("/@reown/") ||
-            id.includes("/wagmi/") ||
-            id.includes("/@wagmi/") ||
-            id.includes("/viem/")
-          ) {
-            return "web3";
+          if (id.includes("/@walletconnect/")) {
+            return "walletconnect";
+          }
+
+          if (id.includes("/@reown/")) {
+            return "reown";
+          }
+
+          if (id.includes("/wagmi/") || id.includes("/@wagmi/")) {
+            return "wagmi";
+          }
+
+          if (id.includes("/viem/") || id.includes("/ox/")) {
+            return "viem";
           }
 
           if (id.includes("/ethers/")) {
