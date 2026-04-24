@@ -304,20 +304,38 @@ const port = isProduction()
   : parsePort(process.env.PORT, 3001);
 const databaseConfig = getDatabaseConfig();
 
-// Warn about missing Celo configuration that will degrade blockchain functionality.
+// Validate Celo configuration — hard errors in production, warnings in development.
 if (!process.env.CELO_RPC_URL?.trim()) {
-  warnConfig(
-    'CELO_RPC_URL is not set; falling back to the public forno.celo.org endpoint. ' +
-    'Set CELO_RPC_URL to a dedicated RPC node for reliable blockchain indexing.',
-    { fallback: 'https://forno.celo.org' }
-  );
+  if (isProduction()) {
+    failConfig(
+      'CELO_RPC_URL is required in production. ' +
+      'Set it to a dedicated Celo RPC endpoint (e.g. from Infura, Ankr, or dRPC) ' +
+      'for reliable blockchain indexing. The public forno.celo.org fallback is not ' +
+      'suitable for production workloads.',
+      { fallback: 'https://forno.celo.org' }
+    );
+  } else {
+    warnConfig(
+      'CELO_RPC_URL is not set; falling back to the public forno.celo.org endpoint. ' +
+      'Set CELO_RPC_URL to a dedicated RPC node for reliable blockchain indexing.',
+      { fallback: 'https://forno.celo.org' }
+    );
+  }
 }
 
 if (!process.env.CELO_WITHDRAW_PRIVATE_KEY?.trim()) {
-  warnConfig(
-    'CELO_WITHDRAW_PRIVATE_KEY is not set; withdrawal transactions will be unavailable. ' +
-    'Set CELO_WITHDRAW_PRIVATE_KEY if the withdrawal feature is required.'
-  );
+  if (isProduction()) {
+    failConfig(
+      'CELO_WITHDRAW_PRIVATE_KEY is required in production. ' +
+      'Set it to the private key of the wallet that will sign withdrawal transactions. ' +
+      'Without it, the withdrawal feature is completely unavailable.'
+    );
+  } else {
+    warnConfig(
+      'CELO_WITHDRAW_PRIVATE_KEY is not set; withdrawal transactions will be unavailable. ' +
+      'Set CELO_WITHDRAW_PRIVATE_KEY if the withdrawal feature is required.'
+    );
+  }
 }
 
 export const config = {

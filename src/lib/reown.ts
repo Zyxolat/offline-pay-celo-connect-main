@@ -12,17 +12,32 @@ import { logWalletConnection } from "@/lib/walletConnectionDebug";
 
 const projectId = getWalletConnectProjectId();
 
+// The canonical production origin must match the domain verified in Reown Cloud
+// (https://cloud.reown.com → your project → Domains → add offline-pay-celo.vercel.app).
+// Using a fixed URL rather than window.location.origin ensures that the metadata
+// sent to WalletConnect relays is always consistent, which is required for mobile
+// deep-link callbacks to resolve correctly.
+const PRODUCTION_ORIGIN = "https://offline-pay-celo.vercel.app";
+
 const getWalletMetadata = () => {
+  // In production always use the canonical Vercel domain so that Reown Cloud
+  // domain verification and WalletConnect mobile deep-link callbacks work.
+  // In development fall back to the current window origin so local testing works.
   const origin =
-    typeof window !== "undefined" && window.location.origin
-      ? window.location.origin
-      : "http://localhost:5173";
+    import.meta.env.PROD
+      ? PRODUCTION_ORIGIN
+      : typeof window !== "undefined" && window.location.origin
+        ? window.location.origin
+        : "http://localhost:5173";
 
   return {
     name: "OfflinePay",
     description: "Offline crypto payments on Celo",
+    // url must exactly match the domain registered in Reown Cloud for domain
+    // verification to pass and for mobile wallet deep-link callbacks to work.
     url: origin,
-    icons: [`${origin}/favicon.ico`],
+    // Icons must be absolute HTTPS URLs so mobile wallets can fetch them.
+    icons: [`${PRODUCTION_ORIGIN}/favicon.ico`],
   } as const;
 };
 
@@ -56,7 +71,13 @@ const reownSingleton =
       networks: supportedNetworks,
       features: {
         analytics: true,
+        // Enable email/social login options alongside wallet connect
+        email: false,
+        socials: false,
       },
+      // Allow all wallet types so mobile users see their installed wallets
+      // (MetaMask, Valora, Trust Wallet, etc.) in the connection modal.
+      allWallets: "SHOW",
     });
 
     logWalletConnection("appkit.initialized", {
