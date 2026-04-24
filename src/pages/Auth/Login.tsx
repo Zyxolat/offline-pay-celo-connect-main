@@ -22,8 +22,6 @@ import {
 
 type AuthMode = 'user' | 'admin';
 type PasskeyAction = 'login' | 'signup';
-const GOOGLE_STATE_KEY = 'google_oauth_state';
-const GOOGLE_REDIRECT_KEY = 'google_oauth_redirect';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   const maybeAxiosError = error as {
@@ -121,7 +119,13 @@ export const Login = () => {
 
       if (passkeyAction === 'signup') {
         const optionsResponse = await authAPI.beginPasskeyRegistration(email);
-        const publicKey = processCredentialCreationOptions(optionsResponse.data.data.options);
+        const { challengeId, options } = optionsResponse.data.data;
+        console.info('[auth] WebAuthn registration options received', {
+          email,
+          challengeId,
+          options,
+        });
+        const publicKey = processCredentialCreationOptions(options);
         const credential = await navigator.credentials.create({ publicKey });
 
         if (!(credential instanceof PublicKeyCredential)) {
@@ -130,8 +134,14 @@ export const Login = () => {
 
         const verifyResponse = await authAPI.completePasskeyRegistration(
           email,
+          challengeId,
           serializePublicKeyCredential(credential),
         );
+        console.info('[auth] WebAuthn registration verified', {
+          email,
+          challengeId,
+          data: verifyResponse.data.data,
+        });
         const result = verifyResponse.data.data;
         storeSession(result.sessionToken, result.user);
         navigate('/dashboard', { replace: true });
@@ -139,7 +149,13 @@ export const Login = () => {
       }
 
       const optionsResponse = await authAPI.beginPasskeyLogin(email);
-      const publicKey = processCredentialRequestOptions(optionsResponse.data.data.options);
+      const { challengeId, options } = optionsResponse.data.data;
+      console.info('[auth] WebAuthn login options received', {
+        email,
+        challengeId,
+        options,
+      });
+      const publicKey = processCredentialRequestOptions(options);
       const credential = await navigator.credentials.get({ publicKey });
 
       if (!(credential instanceof PublicKeyCredential)) {
@@ -148,8 +164,14 @@ export const Login = () => {
 
       const verifyResponse = await authAPI.completePasskeyLogin(
         email,
+        challengeId,
         serializePublicKeyCredential(credential),
       );
+      console.info('[auth] WebAuthn login verified', {
+        email,
+        challengeId,
+        data: verifyResponse.data.data,
+      });
       const result = verifyResponse.data.data;
       storeSession(result.sessionToken, result.user);
       navigate(redirectTarget, { replace: true });
@@ -158,13 +180,6 @@ export const Login = () => {
     } finally {
       setSubmitting(false);
     }
-  };
-
-  const handleGoogleState = () => {
-    const state = crypto.randomUUID();
-    sessionStorage.setItem(GOOGLE_STATE_KEY, state);
-    sessionStorage.setItem(GOOGLE_REDIRECT_KEY, redirectTarget);
-    return state;
   };
 
   return (
@@ -316,7 +331,7 @@ export const Login = () => {
 
             <GoogleAuthButton
               disabled={submitting}
-              getState={handleGoogleState}
+              redirectTo={redirectTarget}
               onError={(message) => setError(message)}
             />
           </div>

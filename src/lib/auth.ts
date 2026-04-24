@@ -9,18 +9,23 @@ export interface SessionUser {
   authMethod?: 'google' | 'passkey' | 'admin';
 }
 
-function getSessionStorage(): Storage | null {
+type BrowserStorageMode = 'local' | 'session';
+
+function getBrowserStorage(mode: BrowserStorageMode): Storage | null {
   if (typeof window === 'undefined') {
     return null;
   }
 
   try {
-    return window.sessionStorage;
+    return mode === 'local' ? window.localStorage : window.sessionStorage;
   } catch (error) {
-    console.error('[auth] Session storage is unavailable.', error);
+    console.error(`[auth] ${mode} storage is unavailable.`, error);
     return null;
   }
 }
+
+const getAllStorages = () =>
+  [getBrowserStorage('local'), getBrowserStorage('session')].filter(Boolean) as Storage[];
 
 const clearSessionStorage = (storage: Storage) => {
   try {
@@ -31,38 +36,49 @@ const clearSessionStorage = (storage: Storage) => {
   }
 };
 
-export const getStoredToken = () => getSessionStorage()?.getItem('sessionToken') ?? null;
+export const getStoredToken = () => {
+  for (const storage of getAllStorages()) {
+    const token = storage.getItem('sessionToken');
+    if (token) {
+      return token;
+    }
+  }
+
+  return null;
+};
 
 export const getStoredUser = (): SessionUser | null => {
-  const storage = getSessionStorage();
-  const raw = storage?.getItem('user');
-  if (!raw) {
-    return null;
-  }
+  for (const storage of getAllStorages()) {
+    const raw = storage.getItem('user');
+    if (!raw) {
+      continue;
+    }
 
-  try {
-    return JSON.parse(raw) as SessionUser;
-  } catch (error) {
-    console.error('[auth] Failed to parse stored user session. Clearing invalid session state.', error);
-    if (storage) {
+    try {
+      return JSON.parse(raw) as SessionUser;
+    } catch (error) {
+      console.error('[auth] Failed to parse stored user session. Clearing invalid session state.', error);
       clearSessionStorage(storage);
     }
-    return null;
   }
+
+  return null;
 };
 
 export const storeSession = (sessionToken: string, user: SessionUser) => {
-  const storage = getSessionStorage();
-  if (!storage) {
-    console.error('[auth] Unable to store session because session storage is unavailable.');
+  const storages = getAllStorages();
+  if (storages.length === 0) {
+    console.error('[auth] Unable to store session because browser storage is unavailable.');
     return;
   }
 
-  try {
-    storage.setItem('sessionToken', sessionToken);
-    storage.setItem('user', JSON.stringify(user));
-  } catch (error) {
-    console.error('[auth] Failed to persist session.', error);
+  for (const storage of storages) {
+    try {
+      storage.setItem('sessionToken', sessionToken);
+      storage.setItem('user', JSON.stringify(user));
+    } catch (error) {
+      console.error('[auth] Failed to persist session.', error);
+    }
   }
 };
 
@@ -76,12 +92,12 @@ export const hasValidStoredAdminSession = () => {
 export const hasStoredSession = () => Boolean(getStoredToken() && getStoredUser());
 
 export const clearSession = () => {
-  const storage = getSessionStorage();
-  if (!storage) {
+  const storages = getAllStorages();
+  if (storages.length === 0) {
     return;
   }
 
-  clearSessionStorage(storage);
+  storages.forEach(clearSessionStorage);
 };
 
 export const isAdminUser = (user: SessionUser | null) =>

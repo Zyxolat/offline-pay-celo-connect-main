@@ -5,13 +5,14 @@ import type {
 } from '@simplewebauthn/types';
 import bcrypt from 'bcryptjs';
 import { type Request, type Response } from 'express';
+import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
 import { webauthnConfig } from '../config/webauthn.js';
 import { config } from '../config/index.js';
 import { AuthSessionModel } from '../models/AuthSession.js';
 import { OAuthProviderModel } from '../models/AuthModels.js';
-import { ChallengeModel } from '../models/Challenge.js';
+import { ChallengeModel, type WebAuthnChallenge } from '../models/Challenge.js';
 import { CredentialModel } from '../models/Credential.js';
 import { UserModel, type User } from '../models/User.js';
 import { tokenService } from '../services/tokenService.js';
@@ -28,32 +29,59 @@ const webauthnEmailSchema = z.object({
   email: z.string().trim().email(),
 });
 
+const googleStartQuerySchema = z.object({
+  redirectTo: z.string().trim().optional(),
+});
+
+const googleCallbackQuerySchema = z.object({
+  code: z.string().trim().optional(),
+  state: z.string().trim().optional(),
+  error: z.string().trim().optional(),
+  error_description: z.string().trim().optional(),
+});
+
 const registrationVerifySchema = z.object({
   email: z.string().trim().email(),
+  challengeId: z.string().trim().uuid(),
   credential: z.custom<RegistrationResponseJSON>(),
 });
 
 const authenticationVerifySchema = z.object({
   email: z.string().trim().email(),
+  challengeId: z.string().trim().uuid(),
   credential: z.custom<AuthenticationResponseJSON>(),
 });
 
-const googleExchangeSchema = z.object({
-  code: z.string().trim().min(1),
-  redirectUri: z.string().trim().url(),
-});
-
 const disabledAuthMessage = 'Unauthorized';
+const GOOGLE_STATE_TTL = '10m';
+const GOOGLE_CALLBACK_PATH = '/auth/google/callback';
+const GOOGLE_FRONTEND_CALLBACK_PATH = '/auth/google/callback';
+
+type SessionAuthMethod = 'admin' | 'passkey' | 'google';
+
+type GoogleStatePayload = {
+  purpose: 'google_oauth_state';
+  redirectTo: string;
+  iat?: number;
+  exp?: number;
+};
 
 const googleOAuthClient = config.google.enabled
-  ? new OAuth2Client(config.google.clientId, config.google.clientSecret, config.google.redirectUri)
+  ? new OAuth2Client(config.google.clientId, config.google.clientSecret, config.google.callbackUrl)
   : null;
 
 const normalizeIp = (value?: string | null) => value?.replace(/^::ffff:/, '') ?? '';
 
 const normalizeEmail = (email: string) => email.trim().toLowerCase();
 
-const buildSessionUser = (user: User, authMethod: 'admin' | 'passkey' | 'google') => ({
+const bufferToBase64Url = (value: Buffer | Uint8Array) => Buffer.from(value).toString('base64url');
+
+const asAuthenticatorTransports = (transports?: string[] | null) =>
+  (transports ?? []) as AuthenticatorTransport[];
+
+const getRequestId = (res: Response) => String(res.locals.requestId || '');
+
+const buildSessionUser = (user: User, authMethod: SessionAuthMethod) => ({
   id: user.id,
   email: user.email,
   role: user.is_admin ? ('admin' as const) : ('user' as const),
@@ -62,7 +90,7 @@ const buildSessionUser = (user: User, authMethod: 'admin' | 'passkey' | 'google'
   walletAddress: user.wallet_address,
 });
 
-const createSession = async (user: User, authMethod: 'admin' | 'passkey' | 'google') => {
+const createSession = async (user: User, authMethod: SessionAuthMethod) => {
   const sessionToken = tokenService.generateToken({
     userId: user.id,
     email: user.email,
@@ -82,31 +110,6 @@ const createSession = async (user: User, authMethod: 'admin' | 'passkey' | 'goog
   };
 };
 
-const assertAdminIpAllowed = (req: Request) => {
-  const allowedIps = config.admin.allowedIps.map((ip) => normalizeIp(ip));
-  if (allowedIps.length === 0) {
-    return true;
-  }
-
-  return allowedIps.includes(normalizeIp(req.ip));
-};
-
-const bufferToBase64Url = (value: Buffer | Uint8Array) => Buffer.from(value).toString('base64url');
-
-const asAuthenticatorTransports = (transports?: string[] | null) =>
-  (transports ?? []) as AuthenticatorTransport[];
-
-const rejectAdminEmailFromUserFlow = (res: Response, email: string) => {
-  if (normalizeEmail(email) === normalizeEmail(config.admin.email)) {
-    errorResponse(res, 'Admin account must use the admin login form.', 403);
-    return true;
-  }
-
-  return false;
-};
-
-const getRequestId = (res: Response) => String(res.locals.requestId || '');
-
 const logAuthEvent = (
   level: 'INFO' | 'WARN' | 'ERROR',
   message: string,
@@ -117,6 +120,93 @@ const logAuthEvent = (
     requestId: getRequestId(res),
     ...meta,
   });
+};
+
+const rejectAdminEmailFromUserFlow = (res: Response, email: string) => {
+  if (normalizeEmail(email) === normalizeEmail(config.admin.email)) {
+    errorResponse(res, 'Admin account must use the admin login form.', 403);
+    return true;
+  }
+
+  return false;
+};
+
+const assertAdminIpAllowed = (req: Request) => {
+  const allowedIps = config.admin.allowedIps.map((ip) => normalizeIp(ip));
+  if (allowedIps.length === 0) {
+    return true;
+  }
+
+  return allowedIps.includes(normalizeIp(req.ip));
+};
+
+const normalizeRedirectTo = (value?: string) => {
+  if (!value) {
+    return '/dashboard';
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed.startsWith('/') || trimmed.startsWith('//')) {
+    return '/dashboard';
+  }
+
+  return trimmed;
+};
+
+const encodeFrontendResult = (payload: Record<string, unknown>) =>
+  Buffer.from(JSON.stringify(payload)).toString('base64url');
+
+const buildFrontendGoogleCallbackUrl = (params: Record<string, string>) => {
+  const callbackUrl = new URL(GOOGLE_FRONTEND_CALLBACK_PATH, config.frontend.url);
+  callbackUrl.hash = new URLSearchParams(params).toString();
+  return callbackUrl.toString();
+};
+
+const redirectToFrontendGoogleCallback = (
+  res: Response,
+  payload:
+    | { status: 'success'; sessionToken: string; user: ReturnType<typeof buildSessionUser>; redirectTo: string }
+    | { status: 'error'; error: string; redirectTo?: string },
+) => {
+  const url =
+    payload.status === 'success'
+      ? buildFrontendGoogleCallbackUrl({
+          result: encodeFrontendResult({
+            sessionToken: payload.sessionToken,
+            user: payload.user,
+            redirectTo: payload.redirectTo,
+          }),
+        })
+      : buildFrontendGoogleCallbackUrl({
+          error: payload.error,
+          ...(payload.redirectTo ? { redirectTo: payload.redirectTo } : {}),
+        });
+
+  res.redirect(302, url);
+};
+
+const issueGoogleStateToken = (redirectTo: string) =>
+  jwt.sign(
+    {
+      purpose: 'google_oauth_state',
+      redirectTo,
+    } satisfies Omit<GoogleStatePayload, 'iat' | 'exp'>,
+    config.jwt.secret,
+    { expiresIn: GOOGLE_STATE_TTL },
+  );
+
+const verifyGoogleStateToken = (state: string): GoogleStatePayload => {
+  const decoded = jwt.verify(state, config.jwt.secret);
+  if (
+    typeof decoded !== 'object' ||
+    !decoded ||
+    decoded.purpose !== 'google_oauth_state' ||
+    typeof decoded.redirectTo !== 'string'
+  ) {
+    throw new Error('Invalid Google OAuth state token.');
+  }
+
+  return decoded as GoogleStatePayload;
 };
 
 const mapGoogleOAuthError = (error: unknown) => {
@@ -131,13 +221,46 @@ const mapGoogleOAuthError = (error: unknown) => {
     return 'Google sign-in is misconfigured. The registered callback URL does not match this app.';
   }
 
+  if (lowerMessage.includes('state')) {
+    return 'Google sign-in state was invalid or expired. Please try again.';
+  }
+
   return 'Google sign-in could not be completed. Please try again.';
 };
 
-const findActiveChallenge = async (
-  userId: string,
-  purpose: 'registration' | 'login',
-) => ChallengeModel.findLatestActiveByUser(userId, purpose);
+const getValidChallenge = async (
+  challengeId: string,
+  expectedPurpose: 'registration' | 'login',
+  expectedUserId: string,
+): Promise<WebAuthnChallenge | null> => {
+  const challenge = await ChallengeModel.findById(challengeId);
+  if (!challenge) {
+    return null;
+  }
+
+  if (challenge.purpose !== expectedPurpose || challenge.user_id !== expectedUserId) {
+    return null;
+  }
+
+  if (new Date(challenge.expires_at).getTime() <= Date.now()) {
+    return null;
+  }
+
+  return challenge;
+};
+
+const getGoogleCallbackRedirectTo = (req: Request) => {
+  try {
+    const validatedQuery = googleCallbackQuerySchema.parse(req.query);
+    if (validatedQuery.state) {
+      return verifyGoogleStateToken(validatedQuery.state).redirectTo;
+    }
+  } catch {
+    return '/dashboard';
+  }
+
+  return '/dashboard';
+};
 
 export const authController = {
   async adminLogin(req: Request, res: Response) {
@@ -167,11 +290,184 @@ export const authController = {
       );
 
       const session = await createSession(adminUser, 'admin');
-
       successResponse(res, session);
     } catch (error) {
-      console.error('Admin login error:', normalizeError(error));
+      logAuthEvent('ERROR', 'Admin login failed', res, {
+        error: normalizeError(error),
+      });
       errorResponse(res, 'Failed to log in', 500);
+    }
+  },
+
+  async googleStart(req: Request, res: Response) {
+    try {
+      if (!config.google.enabled || !googleOAuthClient) {
+        logAuthEvent('WARN', 'Google sign-in attempted while disabled', res);
+        return redirectToFrontendGoogleCallback(res, {
+          status: 'error',
+          error: 'Google sign-in is not configured on this server.',
+        });
+      }
+
+      const parsedQuery = validateWithSchema(res, googleStartQuerySchema, req.query);
+      if (!parsedQuery) {
+        return;
+      }
+
+      const redirectTo = normalizeRedirectTo(parsedQuery.redirectTo);
+      const state = issueGoogleStateToken(redirectTo);
+      const authUrl = googleOAuthClient.generateAuthUrl({
+        access_type: 'offline',
+        prompt: 'select_account',
+        scope: ['openid', 'email', 'profile'],
+        redirect_uri: config.google.callbackUrl,
+        state,
+      });
+
+      logAuthEvent('INFO', 'Redirecting to Google OAuth', res, {
+        redirectTo,
+        callbackUrl: config.google.callbackUrl,
+      });
+
+      res.redirect(302, authUrl);
+    } catch (error) {
+      logAuthEvent('ERROR', 'Failed to start Google OAuth', res, {
+        error: normalizeError(error),
+      });
+      redirectToFrontendGoogleCallback(res, {
+        status: 'error',
+        error: mapGoogleOAuthError(error),
+      });
+    }
+  },
+
+  async googleCallback(req: Request, res: Response) {
+    const redirectTo = getGoogleCallbackRedirectTo(req);
+
+    try {
+      if (!config.google.enabled || !googleOAuthClient) {
+        logAuthEvent('WARN', 'Google callback received while disabled', res);
+        return redirectToFrontendGoogleCallback(res, {
+          status: 'error',
+          error: 'Google sign-in is not configured on this server.',
+          redirectTo,
+        });
+      }
+
+      const payload = validateWithSchema(res, googleCallbackQuerySchema, req.query);
+      if (!payload) {
+        return;
+      }
+
+      if (payload.error) {
+        logAuthEvent('WARN', 'Google OAuth callback returned an error', res, {
+          error: payload.error,
+          errorDescription: payload.error_description,
+          redirectTo,
+        });
+        return redirectToFrontendGoogleCallback(res, {
+          status: 'error',
+          error: payload.error_description || 'Google sign-in was cancelled or denied.',
+          redirectTo,
+        });
+      }
+
+      if (!payload.code || !payload.state) {
+        logAuthEvent('WARN', 'Google OAuth callback missing required query params', res, {
+          hasCode: Boolean(payload.code),
+          hasState: Boolean(payload.state),
+          redirectTo,
+        });
+        return redirectToFrontendGoogleCallback(res, {
+          status: 'error',
+          error: 'Google sign-in callback was incomplete. Please try again.',
+          redirectTo,
+        });
+      }
+
+      const statePayload = verifyGoogleStateToken(payload.state);
+      const tokenResponse = await googleOAuthClient.getToken({
+        code: payload.code,
+        redirect_uri: config.google.callbackUrl,
+      });
+
+      logAuthEvent('INFO', 'Google OAuth callback token response received', res, {
+        redirectTo: statePayload.redirectTo,
+        hasIdToken: Boolean(tokenResponse.tokens.id_token),
+        hasAccessToken: Boolean(tokenResponse.tokens.access_token),
+      });
+
+      const idToken = tokenResponse.tokens.id_token;
+      if (!idToken) {
+        return redirectToFrontendGoogleCallback(res, {
+          status: 'error',
+          error: 'Google sign-in did not return a valid identity token.',
+          redirectTo: statePayload.redirectTo,
+        });
+      }
+
+      const ticket = await googleOAuthClient.verifyIdToken({
+        idToken,
+        audience: config.google.clientId,
+      });
+      const claims = ticket.getPayload();
+
+      if (!claims?.sub || !claims.email || !claims.email_verified) {
+        logAuthEvent('WARN', 'Google identity payload missing required claims', res, {
+          hasSub: Boolean(claims?.sub),
+          hasEmail: Boolean(claims?.email),
+          emailVerified: Boolean(claims?.email_verified),
+        });
+        return redirectToFrontendGoogleCallback(res, {
+          status: 'error',
+          error: 'Google account email could not be verified.',
+          redirectTo: statePayload.redirectTo,
+        });
+      }
+
+      const email = normalizeEmail(claims.email);
+      if (normalizeEmail(email) === normalizeEmail(config.admin.email)) {
+        return redirectToFrontendGoogleCallback(res, {
+          status: 'error',
+          error: 'Admin account must use the admin login form.',
+          redirectTo: statePayload.redirectTo,
+        });
+      }
+
+      const existingLinkedUser = await OAuthProviderModel.findByProvider('google', claims.sub);
+      const user =
+        existingLinkedUser ??
+        (await UserModel.upsertGoogleUser(email, claims.sub, celoService.generateWalletAddress()));
+
+      await OAuthProviderModel.linkProvider(user.id, 'google', claims.sub, email);
+      await AuthSessionModel.revokeUserSessions(user.id);
+
+      const session = await createSession(user, 'google');
+
+      logAuthEvent('INFO', 'Google sign-in verified', res, {
+        userId: user.id,
+        email,
+        googleSubject: claims.sub,
+        redirectTo: statePayload.redirectTo,
+      });
+
+      redirectToFrontendGoogleCallback(res, {
+        status: 'success',
+        sessionToken: session.sessionToken,
+        user: session.user,
+        redirectTo: statePayload.redirectTo,
+      });
+    } catch (error) {
+      logAuthEvent('ERROR', 'Google sign-in failed', res, {
+        error: normalizeError(error),
+        callbackUrl: config.google.callbackUrl,
+        redirectTo,
+      });
+      redirectToFrontendGoogleCallback(res, {
+        status: 'error',
+        error: mapGoogleOAuthError(error),
+        redirectTo,
+      });
     }
   },
 
@@ -203,18 +499,24 @@ export const authController = {
 
       const options = await webauthnConfig.generateRegistrationOptions(user.id, email);
       await ChallengeModel.deleteActiveByUser(user.id, 'registration');
-      await ChallengeModel.create(Buffer.from(options.challenge, 'base64url'), 'registration', user.id);
-      logAuthEvent('INFO', 'Passkey registration challenge created', res, {
+      const challenge = await ChallengeModel.create(Buffer.from(options.challenge, 'base64url'), 'registration', user.id);
+
+      logAuthEvent('INFO', 'Passkey registration options generated', res, {
         userId: user.id,
         email,
-        challengeLength: options.challenge.length,
+        challengeId: challenge.id,
+        rpId: config.webauthn.rpID,
+        origin: config.webauthn.origin,
       });
 
       successResponse(res, {
+        challengeId: challenge.id,
         options,
       });
     } catch (error) {
-      console.error('Registration options error:', normalizeError(error));
+      logAuthEvent('ERROR', 'Passkey registration options failed', res, {
+        error: normalizeError(error),
+      });
       errorResponse(res, 'Failed to start passkey registration', 500);
     }
   },
@@ -236,7 +538,7 @@ export const authController = {
         return errorResponse(res, 'User account not found for this registration attempt.', 404);
       }
 
-      const challenge = await findActiveChallenge(user.id, 'registration');
+      const challenge = await getValidChallenge(payload.challengeId, 'registration', user.id);
       if (!challenge) {
         return errorResponse(res, 'Registration challenge not found or expired.', 400);
       }
@@ -252,6 +554,14 @@ export const authController = {
         expectedOrigin: config.webauthn.origin,
         expectedRPID: config.webauthn.rpID,
         requireUserVerification: true,
+      });
+
+      logAuthEvent('INFO', 'Passkey registration verification completed', res, {
+        userId: user.id,
+        email,
+        challengeId: challenge.id,
+        verified: verification.verified,
+        hasRegistrationInfo: Boolean(verification.registrationInfo),
       });
 
       if (!verification.verified || !verification.registrationInfo) {
@@ -277,18 +587,14 @@ export const authController = {
       await UserModel.setPasskeyId(user.id, payload.credential.id);
       await ChallengeModel.delete(challenge.id);
       await AuthSessionModel.revokeUserSessions(user.id);
-      logAuthEvent('INFO', 'Passkey registration verified', res, {
-        userId: user.id,
-        email,
-        credentialId: payload.credential.id,
-      });
 
       const freshUser = (await UserModel.findById(user.id)) ?? user;
       const session = await createSession(freshUser, 'passkey');
-
       successResponse(res, session);
     } catch (error) {
-      console.error('Registration verify error:', normalizeError(error));
+      logAuthEvent('ERROR', 'Passkey registration verification failed', res, {
+        error: normalizeError(error),
+      });
       errorResponse(res, 'Failed to verify passkey registration', 400);
     }
   },
@@ -324,18 +630,23 @@ export const authController = {
       );
 
       await ChallengeModel.deleteActiveByUser(user.id, 'login');
-      await ChallengeModel.create(Buffer.from(options.challenge, 'base64url'), 'login', user.id);
-      logAuthEvent('INFO', 'Passkey login challenge created', res, {
+      const challenge = await ChallengeModel.create(Buffer.from(options.challenge, 'base64url'), 'login', user.id);
+
+      logAuthEvent('INFO', 'Passkey login options generated', res, {
         userId: user.id,
         email,
+        challengeId: challenge.id,
         allowCredentials: options.allowCredentials?.length ?? 0,
       });
 
       successResponse(res, {
+        challengeId: challenge.id,
         options,
       });
     } catch (error) {
-      console.error('Login options error:', normalizeError(error));
+      logAuthEvent('ERROR', 'Passkey login options failed', res, {
+        error: normalizeError(error),
+      });
       errorResponse(res, 'Failed to start passkey login', 500);
     }
   },
@@ -357,7 +668,7 @@ export const authController = {
         return errorResponse(res, 'No user account found for this email.', 404);
       }
 
-      const challenge = await findActiveChallenge(user.id, 'login');
+      const challenge = await getValidChallenge(payload.challengeId, 'login', user.id);
       if (!challenge) {
         return errorResponse(res, 'Login challenge not found or expired.', 400);
       }
@@ -381,6 +692,14 @@ export const authController = {
         requireUserVerification: true,
       });
 
+      logAuthEvent('INFO', 'Passkey login verification completed', res, {
+        userId: user.id,
+        email,
+        challengeId: challenge.id,
+        credentialId: payload.credential.id,
+        verified: verification.verified,
+      });
+
       if (!verification.verified) {
         return errorResponse(res, 'Passkey login could not be verified.', 401);
       }
@@ -389,97 +708,15 @@ export const authController = {
       await UserModel.setPasskeyId(user.id, payload.credential.id);
       await ChallengeModel.delete(challenge.id);
       await AuthSessionModel.revokeUserSessions(user.id);
-      logAuthEvent('INFO', 'Passkey login verified', res, {
-        userId: user.id,
-        email,
-        credentialId: payload.credential.id,
-      });
 
       const freshUser = (await UserModel.findById(user.id)) ?? user;
       const session = await createSession(freshUser, 'passkey');
-
       successResponse(res, session);
     } catch (error) {
-      console.error('Login verify error:', normalizeError(error));
-      errorResponse(res, 'Failed to verify passkey login', 401);
-    }
-  },
-
-  async googleAuth(req: Request, res: Response) {
-    try {
-      if (!config.google.enabled || !googleOAuthClient) {
-        logAuthEvent('WARN', 'Google sign-in attempted while disabled', res);
-        return errorResponse(res, 'Google sign-in is not configured on this server.', 503);
-      }
-
-      const payload = validateWithSchema(res, googleExchangeSchema, req.body);
-      if (!payload) {
-        return;
-      }
-
-      if (payload.redirectUri !== config.google.redirectUri) {
-        logAuthEvent('WARN', 'Google redirect URI mismatch', res, {
-          receivedRedirectUri: payload.redirectUri,
-          expectedRedirectUri: config.google.redirectUri,
-        });
-        return errorResponse(
-          res,
-          'Google sign-in is misconfigured. The callback URL does not match the server configuration.',
-          400,
-        );
-      }
-
-      const tokenResponse = await googleOAuthClient.getToken({
-        code: payload.code,
-        redirect_uri: payload.redirectUri,
-      });
-      const idToken = tokenResponse.tokens.id_token;
-
-      if (!idToken) {
-        logAuthEvent('WARN', 'Google token exchange returned no id_token', res);
-        return errorResponse(res, 'Google sign-in did not return a valid identity token.', 401);
-      }
-
-      const ticket = await googleOAuthClient.verifyIdToken({
-        idToken,
-        audience: config.google.clientId,
-      });
-      const claims = ticket.getPayload();
-
-      if (!claims?.sub || !claims.email || !claims.email_verified) {
-        logAuthEvent('WARN', 'Google identity payload missing required claims', res, {
-          hasSub: Boolean(claims?.sub),
-          hasEmail: Boolean(claims?.email),
-          emailVerified: Boolean(claims?.email_verified),
-        });
-        return errorResponse(res, 'Google account email could not be verified.', 401);
-      }
-
-      const email = normalizeEmail(claims.email);
-      if (rejectAdminEmailFromUserFlow(res, email)) {
-        return;
-      }
-
-      const user = await UserModel.upsertGoogleUser(
-        email,
-        claims.sub,
-        celoService.generateWalletAddress(),
-      );
-      await OAuthProviderModel.linkProvider(user.id, 'google', claims.sub, email);
-      await AuthSessionModel.revokeUserSessions(user.id);
-      logAuthEvent('INFO', 'Google sign-in verified', res, {
-        userId: user.id,
-        email,
-        googleSubject: claims.sub,
-      });
-
-      const session = await createSession(user, 'google');
-      successResponse(res, session);
-    } catch (error) {
-      logAuthEvent('ERROR', 'Google sign-in failed', res, {
+      logAuthEvent('ERROR', 'Passkey login verification failed', res, {
         error: normalizeError(error),
       });
-      errorResponse(res, mapGoogleOAuthError(error), 401);
+      errorResponse(res, 'Failed to verify passkey login', 401);
     }
   },
 
@@ -489,9 +726,12 @@ export const authController = {
       if (token) {
         await AuthSessionModel.revoke(token);
       }
+
       successResponse(res, { message: 'Logged out successfully' });
     } catch (error) {
-      console.error('Logout error:', normalizeError(error));
+      logAuthEvent('ERROR', 'Logout failed', res, {
+        error: normalizeError(error),
+      });
       errorResponse(res, 'Logout failed', 500);
     }
   },

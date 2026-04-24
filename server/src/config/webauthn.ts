@@ -1,11 +1,17 @@
-import { generateAuthenticationOptions, generateRegistrationOptions, verifyAuthenticationResponse, verifyRegistrationResponse } from '@simplewebauthn/server';
+import type { AuthenticatorTransport } from '@simplewebauthn/types';
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from '@simplewebauthn/server';
 import { config } from './index.js';
 
 export const webauthnConfig = {
   generateRegistrationOptions: async (
     userID: string,
     userName: string,
-    excludeCredentials: Array<{ id: Buffer; type: 'public-key'; transports?: AuthenticatorTransport[] }> = []
+    excludeCredentials: Array<{ id: Buffer; type: 'public-key'; transports?: AuthenticatorTransport[] }> = [],
   ) => {
     return generateRegistrationOptions({
       rpName: config.webauthn.rpName,
@@ -15,7 +21,6 @@ export const webauthnConfig = {
       userDisplayName: userName,
       attestationType: 'none',
       authenticatorSelection: {
-        authenticatorAttachment: 'platform',
         residentKey: 'preferred',
         userVerification: 'required',
       },
@@ -25,7 +30,7 @@ export const webauthnConfig = {
   },
 
   generateAuthenticationOptions: async (
-    allowCredentials: Array<{ id: Buffer; type: 'public-key'; transports?: AuthenticatorTransport[] }> = []
+    allowCredentials: Array<{ id: Buffer; type: 'public-key'; transports?: AuthenticatorTransport[] }> = [],
   ) => {
     return generateAuthenticationOptions({
       rpID: config.webauthn.rpID,

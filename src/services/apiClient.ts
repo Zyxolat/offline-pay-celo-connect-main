@@ -14,32 +14,19 @@ export const authAPI = {
     withApiErrorLogging('adminLogin', api.post('/auth/admin/login', { email, password })),
   login: (email: string, password: string) =>
     withApiErrorLogging('login', api.post('/auth/login', { email, password })),
-  googleLogin: (code: string, redirectUri: string) =>
-    withApiErrorLogging(
-      'googleLogin',
-      api.post(
-        '/auth/google',
-        { code, redirectUri },
-        {
-          headers: {
-            'X-Requested-With': 'XMLHttpRequest',
-          },
-        },
-      ),
-    ),
   beginPasskeyRegistration: (email: string) =>
     withApiErrorLogging('beginPasskeyRegistration', api.post('/auth/webauthn/register/options', { email })),
-  completePasskeyRegistration: (email: string, credential: unknown) =>
+  completePasskeyRegistration: (email: string, challengeId: string, credential: unknown) =>
     withApiErrorLogging(
       'completePasskeyRegistration',
-      api.post('/auth/webauthn/register/verify', { email, credential }),
+      api.post('/auth/webauthn/register/verify', { email, challengeId, credential }),
     ),
   beginPasskeyLogin: (email: string) =>
     withApiErrorLogging('beginPasskeyLogin', api.post('/auth/webauthn/login/options', { email })),
-  completePasskeyLogin: (email: string, credential: unknown) =>
+  completePasskeyLogin: (email: string, challengeId: string, credential: unknown) =>
     withApiErrorLogging(
       'completePasskeyLogin',
-      api.post('/auth/webauthn/login/verify', { email, credential }),
+      api.post('/auth/webauthn/login/verify', { email, challengeId, credential }),
     ),
   logout: () => withApiErrorLogging('logout', api.post('/auth/logout')),
 };

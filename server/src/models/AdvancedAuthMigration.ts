@@ -174,6 +174,18 @@ const migrationStatements = [
     );
     CREATE INDEX IF NOT EXISTS idx_credentials_user_id ON credentials(user_id);
   `,
+  `
+    CREATE TABLE IF NOT EXISTS oauth_providers (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider VARCHAR(50) NOT NULL,
+      provider_id VARCHAR(255) NOT NULL,
+      provider_email VARCHAR(255),
+      linked_at TIMESTAMP NOT NULL DEFAULT NOW(),
+      UNIQUE(provider, provider_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_oauth_providers_user_id ON oauth_providers(user_id);
+  `,
 ];
 
 async function backfillWallets() {

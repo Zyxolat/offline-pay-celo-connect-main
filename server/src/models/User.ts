@@ -97,12 +97,11 @@ export const UserModel = {
         `
           UPDATE users
           SET google_id = $1,
-              is_admin = CASE WHEN email = $2 THEN TRUE ELSE is_admin END,
               updated_at = NOW()
-          WHERE email = $3
+          WHERE email = $2
           RETURNING *
         `,
-        [googleId, email, email]
+        [googleId, email]
       );
       return result.rows[0];
     }

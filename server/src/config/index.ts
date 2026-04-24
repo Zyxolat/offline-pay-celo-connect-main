@@ -348,10 +348,11 @@ if (webauthnRpId !== frontendOriginUrl.hostname) {
 
 const googleClientId = getOptionalEnv('GOOGLE_CLIENT_ID') || getOptionalEnv('VITE_GOOGLE_CLIENT_ID') || '';
 const googleClientSecret = getOptionalEnv('GOOGLE_CLIENT_SECRET') || '';
-const googleRedirectUriValue =
+const googleCallbackUrlValue =
+  getOptionalEnv('GOOGLE_CALLBACK_URL') ||
   getOptionalEnv('GOOGLE_REDIRECT_URI') ||
-  new URL('/auth/google/callback', frontendOriginUrl.origin).toString();
-const googleRedirectUriUrl = parseAbsoluteUrl('GOOGLE_REDIRECT_URI', googleRedirectUriValue, {
+  new URL('/auth/google/callback', 'http://localhost:3001').toString();
+const googleCallbackUrl = parseAbsoluteUrl('GOOGLE_CALLBACK_URL', googleCallbackUrlValue, {
   requireHttpsInProduction: true,
 });
 
@@ -365,10 +366,9 @@ if (Boolean(googleClientId) !== Boolean(googleClientSecret)) {
   );
 }
 
-if (googleRedirectUriUrl.origin !== frontendOriginUrl.origin) {
-  failConfig('GOOGLE_REDIRECT_URI must exactly match the frontend origin', {
-    frontendOrigin: frontendOriginUrl.origin,
-    configuredRedirectOrigin: googleRedirectUriUrl.origin,
+if (googleCallbackUrl.pathname !== '/auth/google/callback') {
+  failConfig('GOOGLE_CALLBACK_URL must use the /auth/google/callback path', {
+    configuredCallbackUrl: googleCallbackUrl.toString(),
   });
 }
 
@@ -435,7 +435,7 @@ export const config = {
     enabled: Boolean(googleClientId && googleClientSecret),
     clientId: googleClientId,
     clientSecret: googleClientSecret,
-    redirectUri: googleRedirectUriUrl.toString(),
+    callbackUrl: googleCallbackUrl.toString(),
   },
 
   celo: {

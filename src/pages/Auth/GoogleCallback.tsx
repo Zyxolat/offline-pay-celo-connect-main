@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { getGoogleRedirectUri } from '@/config/env';
-import { getStoredUser, hasStoredSession, storeSession } from '@/lib/auth';
-import { authAPI } from '@/services/apiClient';
+import { getStoredUser, hasStoredSession, storeSession, type SessionUser } from '@/lib/auth';
 
-const GOOGLE_STATE_KEY = 'google_oauth_state';
-const GOOGLE_REDIRECT_KEY = 'google_oauth_redirect';
+type GoogleCallbackResult = {
+  sessionToken: string;
+  user: SessionUser;
+  redirectTo?: string;
+};
 
-const clearGoogleState = () => {
-  sessionStorage.removeItem(GOOGLE_STATE_KEY);
-  sessionStorage.removeItem(GOOGLE_REDIRECT_KEY);
+const decodeBase64UrlJson = <T,>(value: string): T => {
+  const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
+  const padding = (4 - (normalized.length % 4 || 4)) % 4;
+  const padded = normalized + '='.repeat(padding);
+  return JSON.parse(atob(padded)) as T;
 };
 
 export const GoogleCallback = () => {
@@ -24,57 +27,42 @@ export const GoogleCallback = () => {
       return;
     }
 
-    const code = searchParams.get('code');
-    const state = searchParams.get('state');
-    const oauthError = searchParams.get('error');
-    const oauthErrorDescription = searchParams.get('error_description');
-    const expectedState = sessionStorage.getItem(GOOGLE_STATE_KEY);
-    const redirectTarget = sessionStorage.getItem(GOOGLE_REDIRECT_KEY) || '/dashboard';
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
+    const encodedResult = hashParams.get('result');
+    const callbackError = hashParams.get('error');
 
-    if (oauthError) {
-      clearGoogleState();
-      setError(oauthErrorDescription || 'Google sign-in was cancelled or denied.');
+    if (searchParams.get('code') || searchParams.get('state')) {
+      setError(
+        'Google is redirecting to the frontend instead of the backend callback. Set GOOGLE_CALLBACK_URL to your Railway backend /auth/google/callback URL.',
+      );
       return;
     }
 
-    if (!code) {
-      clearGoogleState();
-      setError('Google sign-in did not return an authorization code. Please try again.');
+    if (callbackError) {
+      setError(callbackError);
       return;
     }
 
-    if (!state || !expectedState || state !== expectedState) {
-      clearGoogleState();
-      setError('Google sign-in expired or could not be validated. Please try again.');
+    if (!encodedResult) {
+      setError('Google sign-in did not return a session result. Please try again.');
       return;
     }
 
-    const exchangeCode = async () => {
-      try {
-        const response = await authAPI.googleLogin(code, getGoogleRedirectUri());
-        const result = response.data.data;
-        clearGoogleState();
-        storeSession(result.sessionToken, result.user);
-        navigate(redirectTarget.startsWith('/') ? redirectTarget : '/dashboard', { replace: true });
-      } catch (exchangeError) {
-        clearGoogleState();
-        const maybeAxiosError = exchangeError as {
-          response?: {
-            data?: {
-              error?: string;
-            };
-          };
-          message?: string;
-        };
-        setError(
-          maybeAxiosError.response?.data?.error ||
-            maybeAxiosError.message ||
-            'Google sign-in could not be completed. Please try again.',
-        );
+    try {
+      const result = decodeBase64UrlJson<GoogleCallbackResult>(encodedResult);
+      console.info('[auth] Google OAuth callback parsed', result);
+
+      if (!result.sessionToken || !result.user) {
+        throw new Error('Google sign-in result was incomplete.');
       }
-    };
 
-    void exchangeCode();
+      storeSession(result.sessionToken, result.user);
+      window.history.replaceState({}, document.title, window.location.pathname);
+      navigate(result.redirectTo?.startsWith('/') ? result.redirectTo : '/dashboard', { replace: true });
+    } catch (parseError) {
+      console.error('[auth] Failed to parse Google OAuth callback result', parseError);
+      setError(parseError instanceof Error ? parseError.message : 'Google sign-in could not be completed.');
+    }
   }, [navigate, searchParams, storedUser]);
 
   if (hasStoredSession() && storedUser) {

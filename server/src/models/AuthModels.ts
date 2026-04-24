@@ -141,7 +141,10 @@ export const OAuthProviderModel = {
     await pool.query(
       `INSERT INTO oauth_providers (id, user_id, provider, provider_id, provider_email, linked_at)
        VALUES ($1, $2, $3, $4, $5, NOW())
-       ON CONFLICT (provider, provider_id) DO UPDATE SET linked_at = NOW()`,
+       ON CONFLICT (provider, provider_id) DO UPDATE
+       SET user_id = EXCLUDED.user_id,
+           provider_email = EXCLUDED.provider_email,
+           linked_at = NOW()`,
       [uuidv4(), userId, provider, providerId, email]
     );
   },

@@ -1,4 +1,4 @@
-import { clearSession } from '@/lib/auth';
+import { clearSession, getStoredToken } from '@/lib/auth';
 import { getApiBaseUrl } from '@/config/env';
 import axios from 'axios';
 
@@ -10,7 +10,7 @@ const api = axios.create({
 });
 
 api.interceptors.request.use((config) => {
-  const token = sessionStorage.getItem('sessionToken');
+  const token = getStoredToken();
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

@@ -266,6 +266,7 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
 });
 
 // Routes
+app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/payments', paymentRoutes);

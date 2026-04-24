@@ -20,6 +20,10 @@ function normalizeApiBaseUrl(value: string) {
   return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
 }
 
+function normalizeApiRootUrl(value: string) {
+  return value.replace(/\/api$/, '');
+}
+
 function normalizeAbsoluteUrl(value: string) {
   return value.replace(/\/+$/, '');
 }
@@ -39,10 +43,6 @@ function getGoogleClientId() {
 }
 
 export const GOOGLE_CLIENT_ID = getGoogleClientId();
-
-export function getGoogleRedirectUri() {
-  return `${getAppBaseUrl()}/auth/google/callback`;
-}
 
 export function getAppBaseUrl() {
   const configured = getViteEnv('VITE_APP_URL');
@@ -92,6 +92,16 @@ export function getApiBaseUrl() {
   }
 
   return 'http://localhost:3001/api';
+}
+
+export function getApiRootUrl() {
+  return normalizeApiRootUrl(getApiBaseUrl());
+}
+
+export function getGoogleAuthStartUrl(redirectTo = '/dashboard') {
+  const url = new URL('/auth/google', getApiRootUrl());
+  url.searchParams.set('redirectTo', redirectTo.startsWith('/') ? redirectTo : '/dashboard');
+  return url.toString();
 }
 
 export function getWalletConnectProjectId() {

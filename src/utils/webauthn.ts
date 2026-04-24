@@ -55,6 +55,10 @@ export function processCredentialCreationOptions(options: any) {
     throw new Error('Registration user identifier is missing or invalid.');
   }
 
+  if (options.excludeCredentials && !Array.isArray(options.excludeCredentials)) {
+    throw new Error('Registration excludeCredentials is invalid.');
+  }
+
   return {
     ...options,
     challenge: base64UrlToUint8Array(options.challenge),
@@ -81,6 +85,10 @@ export function processCredentialRequestOptions(options: any) {
 
   if (typeof options.challenge !== 'string') {
     throw new Error('Login challenge is missing or invalid.');
+  }
+
+  if (options.allowCredentials && !Array.isArray(options.allowCredentials)) {
+    throw new Error('Login allowCredentials is invalid.');
   }
 
   return {
