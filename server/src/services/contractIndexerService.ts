@@ -86,7 +86,7 @@ const FAILURE_THRESHOLD = Math.max(1, config.celo.eventIndexerFailureThreshold |
 const INTEGRITY_INTERVAL_MS = Math.max(30_000, config.celo.eventIndexerIntegrityIntervalMs || 300_000);
 const INTEGRITY_SAMPLE_SIZE = Math.max(1, config.celo.eventIndexerIntegritySampleSize || 5);
 const INTEGRITY_LOOKBACK_BLOCKS = Math.max(1, config.celo.eventIndexerIntegrityLookbackBlocks || 250);
-const MAX_RANGE = 2000;
+const MAX_BLOCK_RANGE = 10;
 const INDEXED_EVENTS: IndexedPaymentEventName[] = ['PaymentCreated', 'PaymentClaimed', 'PaymentRefunded'];
 const normalizeAddress = (address: string) => ethers.getAddress(address);
 const indexedContracts = celoService.getIndexedContracts();
@@ -341,7 +341,7 @@ async function safeGetLogs(filter: ethers.Filter) {
       return await safeRpc((provider) => provider.getLogs(filter));
     } catch (e) {
       console.warn('Retry getLogs', i, e);
-      await new Promise((resolve) => setTimeout(resolve, 1000));
+      await new Promise((resolve) => setTimeout(resolve, 500 * (2 ** i)));
     }
   }
 
@@ -588,12 +588,25 @@ export const contractIndexerService = {
         contractEntry.interface.getEvent('PaymentRefunded')!.topicHash,
       ];
 
-      const logs = await safeGetLogs({
-        address: contractEntry.address,
-        fromBlock,
-        toBlock,
-        topics: [topics],
-      });
+      let logs: Log[] = [];
+
+      try {
+        logs = await safeGetLogs({
+          address: contractEntry.address,
+          fromBlock,
+          toBlock,
+          topics: [topics],
+        });
+      } catch (error) {
+        log('ERROR', 'Indexer failed to fetch logs for contract chunk', {
+          contractAddress: contractEntry.address,
+          fromBlock,
+          toBlock,
+          rpcUrl: getCurrentRpc(),
+          error: normalizeError(error),
+        });
+        continue;
+      }
 
       const parsedLogs = logs.flatMap((logEntry) => {
         try {
@@ -634,9 +647,19 @@ export const contractIndexerService = {
   async queryConfirmedLogs(fromBlock: number, toBlock: number) {
     const allLogs: EventLog[] = [];
 
-    for (let chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += MAX_BLOCKS_PER_QUERY) {
-      const chunkTo = Math.min(toBlock, chunkFrom + MAX_BLOCKS_PER_QUERY - 1);
-      allLogs.push(...await this.queryConfirmedLogsChunk(chunkFrom, chunkTo));
+    for (let chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += MAX_BLOCK_RANGE) {
+      const chunkTo = Math.min(toBlock, chunkFrom + MAX_BLOCK_RANGE - 1);
+
+      try {
+        allLogs.push(...await this.queryConfirmedLogsChunk(chunkFrom, chunkTo));
+      } catch (error) {
+        log('ERROR', 'Indexer failed to query confirmed logs chunk', {
+          fromBlock: chunkFrom,
+          toBlock: chunkTo,
+          rpcUrl: getCurrentRpc(),
+          error: normalizeError(error),
+        });
+      }
     }
 
     return allLogs.sort((left, right) => {
@@ -817,6 +840,7 @@ export const contractIndexerService = {
 
   async processConfirmedRange(fromBlock: number, toBlock: number) {
     let indexedEvents = 0;
+    let firstFailedChunkFrom: number | null = null;
 
     const flushBlock = async (blockNumber: number, logsForBlock: EventLog[]) => {
       logsForBlock.sort((left, right) => {
@@ -841,9 +865,22 @@ export const contractIndexerService = {
       indexedEvents += logsForBlock.length;
     };
 
-    for (let chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += MAX_BLOCKS_PER_QUERY) {
-      const chunkTo = Math.min(toBlock, chunkFrom + MAX_BLOCKS_PER_QUERY - 1);
-      const allLogs = await this.queryConfirmedLogsChunk(chunkFrom, chunkTo);
+    for (let chunkFrom = fromBlock; chunkFrom <= toBlock; chunkFrom += MAX_BLOCK_RANGE) {
+      const chunkTo = Math.min(toBlock, chunkFrom + MAX_BLOCK_RANGE - 1);
+      let allLogs: EventLog[] = [];
+
+      try {
+        allLogs = await this.queryConfirmedLogsChunk(chunkFrom, chunkTo);
+      } catch (error) {
+        firstFailedChunkFrom ??= chunkFrom;
+        log('ERROR', 'Indexer failed to process chunk; leaving checkpoint before failed range', {
+          fromBlock: chunkFrom,
+          toBlock: chunkTo,
+          error: normalizeError(error),
+          rpcUrl: getCurrentRpc(),
+        });
+        break;
+      }
 
       let currentBlock = chunkFrom;
       let blockLogs: EventLog[] = [];
@@ -882,6 +919,23 @@ export const contractIndexerService = {
         this.status.lastProcessedBlock = chunkTo;
         this.status.nextSyncFromBlock = chunkTo + 1;
       }
+    }
+
+    if (firstFailedChunkFrom !== null) {
+      const rollbackCheckpoint = Math.max(0, firstFailedChunkFrom - 1);
+      await withTransaction(async (client) => {
+        await ChainIndexerStateModel.set(INDEXER_STATE_KEY, String(rollbackCheckpoint), client);
+      });
+
+      this.status.storedCheckpointBlock = rollbackCheckpoint;
+      this.status.lastProcessedBlock = rollbackCheckpoint;
+      this.status.nextSyncFromBlock = firstFailedChunkFrom;
+
+      log('WARN', 'Confirmed contract event sync paused at failed chunk', {
+        failedFromBlock: firstFailedChunkFrom,
+        resumeFromBlock: firstFailedChunkFrom,
+      });
+      return;
     }
 
     if (this.status.lastProcessedBlock === null || this.status.lastProcessedBlock < toBlock) {
@@ -933,7 +987,7 @@ export const contractIndexerService = {
           return;
         }
 
-        const toBlock = Math.min(fromBlock + MAX_RANGE, confirmedBlock);
+        const toBlock = Math.min(fromBlock + MAX_BLOCK_RANGE - 1, confirmedBlock);
         await this.processConfirmedRange(fromBlock, toBlock);
         await this.refreshLag();
         this.status.consecutiveSyncFailures = 0;
@@ -1315,14 +1369,6 @@ export const contractIndexerService = {
 
     this.isStarted = true;
     this.status.started = true;
-
-    // Validate Celo RPC configuration before attempting any chain calls.
-    const rpcUrl = config.celo.rpcUrl;
-    if (!rpcUrl || rpcUrl === 'https://forno.celo.org') {
-      log('WARN', 'CELO_RPC_URL is not explicitly set; using public fallback endpoint (forno.celo.org). Set CELO_RPC_URL for a dedicated RPC node.', {
-        rpcUrl,
-      });
-    }
 
     if (!config.celo.withdrawPrivateKey) {
       log('WARN', 'CELO_WITHDRAW_PRIVATE_KEY is not set; withdrawal functionality will be unavailable.');

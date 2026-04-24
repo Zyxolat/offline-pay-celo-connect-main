@@ -17,43 +17,48 @@ const respondUnauthorized = (res: Response, reason: 'missing' | 'expired' | 'inv
 };
 
 const authenticateRequest = async (req: Request, res: Response) => {
-  const authHeader = req.headers.authorization;
-  const token = tokenService.parseAuthHeader(authHeader);
+  try {
+    const authHeader = req.headers.authorization;
+    const token = tokenService.parseAuthHeader(authHeader);
 
-  if (!token) {
-    respondUnauthorized(res, 'missing');
+    if (!token) {
+      respondUnauthorized(res, 'missing');
+      return null;
+    }
+
+    const verification = tokenService.verifyTokenDetailed(token);
+    if (!verification.valid) {
+      respondUnauthorized(res, verification.reason);
+      return null;
+    }
+
+    const session = await AuthSessionModel.findActiveSession(token);
+    if (!session) {
+      respondUnauthorized(res, 'session');
+      return null;
+    }
+
+    const payload = verification.payload;
+
+    req.user = {
+      userId: payload.userId,
+      email: payload.email,
+      role: payload.role,
+      authMethod: payload.authMethod,
+      isAdmin: payload.role === 'admin',
+    };
+
+    await AuthSessionModel.touch(token);
+
+    return {
+      payload,
+      session,
+      token,
+    };
+  } catch {
+    respondUnauthorized(res, 'invalid');
     return null;
   }
-
-  const verification = tokenService.verifyTokenDetailed(token);
-  if (!verification.valid) {
-    respondUnauthorized(res, verification.reason);
-    return null;
-  }
-
-  const session = await AuthSessionModel.findActiveSession(token);
-  if (!session) {
-    respondUnauthorized(res, 'session');
-    return null;
-  }
-
-  const payload = verification.payload;
-
-  req.user = {
-    userId: payload.userId,
-    email: payload.email,
-    role: payload.role,
-    authMethod: payload.authMethod,
-    isAdmin: payload.role === 'admin',
-  };
-
-  await AuthSessionModel.touch(token);
-
-  return {
-    payload,
-    session,
-    token,
-  };
 };
 
 export const authMiddleware = async (req: Request, res: Response, next: NextFunction) => {

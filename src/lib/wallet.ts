@@ -79,19 +79,21 @@ export const resolveManualWalletOpenUrl = (
   currentUrl: string,
   browser = getMobileWalletEnvironment(),
   walletConnectUri?: string | null,
+  appBaseUrl?: string,
 ) => {
   if (!deepLink || browser.preferWalletConnectModalOnly) {
     return null;
   }
 
   let resolvedDeepLink = deepLink;
+  const returnUrl = appBaseUrl || currentUrl;
 
   if (walletConnectUri && /(?:\{|\%7B)(?:\{)?uri(?:\})?(?:\})?/i.test(resolvedDeepLink)) {
     resolvedDeepLink = withEncodedValue(resolvedDeepLink, 'uri', walletConnectUri);
   }
 
   if (/(?:\{|\%7B)(?:\{)?url(?:\})?(?:\})?/i.test(resolvedDeepLink)) {
-    resolvedDeepLink = withEncodedValue(resolvedDeepLink, 'url', currentUrl);
+    resolvedDeepLink = withEncodedValue(resolvedDeepLink, 'url', returnUrl);
   }
 
   return resolvedDeepLink;

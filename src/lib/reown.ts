@@ -6,38 +6,19 @@ import { ConnectionController } from "@reown/appkit-controllers";
 import { getAddress } from "viem";
 import { getAccount, watchAccount } from "wagmi/actions";
 
-import { getWalletConnectProjectId } from "@/config/env";
+import { getAppBaseUrl, getWalletConnectProjectId } from "@/config/env";
 import { getMobileWalletEnvironment, resolveManualWalletOpenUrl } from "@/lib/wallet";
 import { logWalletConnection } from "@/lib/walletConnectionDebug";
 
 const projectId = getWalletConnectProjectId();
-
-// The canonical production origin must match the domain verified in Reown Cloud
-// (https://cloud.reown.com → your project → Domains → add offline-pay-celo.vercel.app).
-// Using a fixed URL rather than window.location.origin ensures that the metadata
-// sent to WalletConnect relays is always consistent, which is required for mobile
-// deep-link callbacks to resolve correctly.
-const PRODUCTION_ORIGIN = "https://offline-pay-celo.vercel.app";
+const APP_ORIGIN = getAppBaseUrl();
 
 const getWalletMetadata = () => {
-  // In production always use the canonical Vercel domain so that Reown Cloud
-  // domain verification and WalletConnect mobile deep-link callbacks work.
-  // In development fall back to the current window origin so local testing works.
-  const origin =
-    import.meta.env.PROD
-      ? PRODUCTION_ORIGIN
-      : typeof window !== "undefined" && window.location.origin
-        ? window.location.origin
-        : "http://localhost:5173";
-
   return {
     name: "OfflinePay",
     description: "Offline crypto payments on Celo",
-    // url must exactly match the domain registered in Reown Cloud for domain
-    // verification to pass and for mobile wallet deep-link callbacks to work.
-    url: origin,
-    // Icons must be absolute HTTPS URLs so mobile wallets can fetch them.
-    icons: [`${PRODUCTION_ORIGIN}/favicon.ico`],
+    url: APP_ORIGIN,
+    icons: [`${APP_ORIGIN}/favicon.ico`],
   } as const;
 };
 
@@ -138,9 +119,10 @@ export const getWalletManualOpenUrl = (walletDeepLink: string | undefined, curre
 
   return resolveManualWalletOpenUrl(
     walletDeepLink,
-    currentUrl,
+    typeof window !== "undefined" ? window.location.href : currentUrl,
     getMobileWalletEnvironment(),
     getLatestWalletConnectUri(),
+    APP_ORIGIN,
   );
 };
 

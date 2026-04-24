@@ -48,6 +48,25 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+function parseRequiredChainId(): number {
+  const rawChainId = process.env.CHAIN_ID?.trim() || process.env.CELO_CHAIN_ID?.trim() || '42220';
+  const chainId = Number.parseInt(rawChainId, 10);
+
+  if (!Number.isFinite(chainId)) {
+    return failConfig('CHAIN_ID must be a valid integer', {
+      value: rawChainId,
+    });
+  }
+
+  if (chainId !== 42220) {
+    return failConfig('CHAIN_ID must be 42220 for Celo Mainnet', {
+      value: rawChainId,
+    });
+  }
+
+  return chainId;
+}
+
 function deriveWebSocketUrl(value: string): string | undefined {
   if (value.startsWith('https://')) {
     return `wss://${value.slice('https://'.length)}`;
@@ -300,28 +319,26 @@ if (webauthnRpId !== frontendOriginUrl.hostname) {
   });
 }
 
+const chainId = parseRequiredChainId();
+
 const port = isProduction()
   ? parsePort(requireEnv('PORT'), 0)
   : parsePort(process.env.PORT, 3001);
 const databaseConfig = getDatabaseConfig();
 
-// Validate Celo configuration — hard errors in production, warnings in development.
-if (!process.env.CELO_RPC_URL?.trim()) {
-  if (isProduction()) {
-    failConfig(
-      'CELO_RPC_URL is required in production. ' +
-      'Set it to a dedicated Celo RPC endpoint (e.g. from Infura, Ankr, or dRPC) ' +
-      'for reliable blockchain indexing. The public forno.celo.org fallback is not ' +
-      'suitable for production workloads.',
-      { fallback: 'https://forno.celo.org' }
-    );
-  } else {
-    warnConfig(
-      'CELO_RPC_URL is not set; falling back to the public forno.celo.org endpoint. ' +
-      'Set CELO_RPC_URL to a dedicated RPC node for reliable blockchain indexing.',
-      { fallback: 'https://forno.celo.org' }
-    );
-  }
+const celoRpcUrl = requireEnv('CELO_RPC_URL');
+
+if (!/^https:\/\/celo-mainnet\.g\.alchemy\.com\/v2\/[^/]+$/i.test(celoRpcUrl)) {
+  failConfig('CELO_RPC_URL must be a Celo Mainnet Alchemy URL', {
+    value: celoRpcUrl,
+  });
+}
+
+const celoNetwork = (process.env.CELO_NETWORK || 'mainnet').trim().toLowerCase();
+if (celoNetwork !== 'mainnet') {
+  failConfig('CELO_NETWORK must be mainnet', {
+    value: process.env.CELO_NETWORK,
+  });
 }
 
 if (!process.env.CELO_WITHDRAW_PRIVATE_KEY?.trim()) {
@@ -362,12 +379,12 @@ export const config = {
   },
 
   celo: {
-    network: process.env.CELO_NETWORK || 'mainnet',
-    rpcUrl: process.env.CELO_RPC_URL,
+    network: celoNetwork,
+    rpcUrl: celoRpcUrl,
     wsRpcUrl:
       getOptionalEnv('CELO_WS_RPC_URL') ||
-      deriveWebSocketUrl(process.env.CELO_RPC_URL),
-    chainId: parseInt(process.env.CELO_CHAIN_ID || '42220', 10),
+      deriveWebSocketUrl(celoRpcUrl),
+    chainId,
     cUSDAddress: process.env.CELO_CUSD_ADDRESS || '0x765DE816845861e75A25fCA122bb6bAA3c1E852a',
     withdrawPrivateKey: process.env.CELO_WITHDRAW_PRIVATE_KEY || '',
     timeLockContractAddress:

@@ -20,6 +20,10 @@ function normalizeApiBaseUrl(value: string) {
   return normalized.endsWith('/api') ? normalized : `${normalized}/api`;
 }
 
+function normalizeAbsoluteUrl(value: string) {
+  return value.replace(/\/+$/, '');
+}
+
 function getGoogleClientId() {
   const clientId = getViteEnv('VITE_GOOGLE_CLIENT_ID');
 
@@ -35,6 +39,38 @@ function getGoogleClientId() {
 }
 
 export const GOOGLE_CLIENT_ID = getGoogleClientId();
+
+export function getAppBaseUrl() {
+  const configured = getViteEnv('VITE_APP_URL');
+
+  if (configured) {
+    if (!isAbsoluteHttpUrl(configured)) {
+      throw new Error('VITE_APP_URL must be an absolute http(s) URL.');
+    }
+
+    return normalizeAbsoluteUrl(configured);
+  }
+
+  if (typeof window !== 'undefined' && window.location.origin) {
+    return normalizeAbsoluteUrl(window.location.origin);
+  }
+
+  if (import.meta.env.PROD) {
+    throw new Error('VITE_APP_URL is required in production.');
+  }
+
+  return 'http://localhost:5173';
+}
+
+export function getRequiredChainId() {
+  const configured = getViteEnv('VITE_CHAIN_ID');
+
+  if (configured && configured !== '42220') {
+    throw new Error('VITE_CHAIN_ID must be 42220 for Celo Mainnet.');
+  }
+
+  return 42220;
+}
 
 export function getApiBaseUrl() {
   const configured = getViteEnv('VITE_API_URL');
@@ -62,6 +98,24 @@ export function getWalletConnectProjectId() {
   }
 
   throw new Error('VITE_WALLETCONNECT_PROJECT_ID is required and must contain a real Reown project id.');
+}
+
+export function getCeloMainnetRpcUrl() {
+  const configured = getViteEnv('VITE_CELO_RPC_URL');
+
+  if (configured) {
+    if (
+      !/^https:\/\/celo-mainnet\.g\.alchemy\.com\/v2\/[^/]+$/i.test(configured) &&
+      configured !== 'https://forno.celo.org' &&
+      configured !== 'https://rpc.ankr.com/celo'
+    ) {
+      throw new Error('VITE_CELO_RPC_URL must be a supported Celo Mainnet RPC URL.');
+    }
+
+    return configured;
+  }
+
+  return 'https://forno.celo.org';
 }
 
 export function getTimeLockContractAddress() {

@@ -52,9 +52,15 @@ export const tokenService = {
   },
 
   parseAuthHeader(authHeader?: string): string | null {
-    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    if (!authHeader) {
       return null;
     }
-    return authHeader.slice(7);
+
+    const [scheme, token] = authHeader.trim().split(/\s+/, 2);
+    if (!scheme || !token || scheme.toLowerCase() !== 'bearer') {
+      return null;
+    }
+
+    return token.trim() || null;
   },
 };

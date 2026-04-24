@@ -1,15 +1,20 @@
 import { JsonRpcProvider } from 'ethers';
 
-const CELO_CHAIN_ID = 42220n;
+const CELO_MAINNET_CHAIN_ID = 42220n;
 const RPC_TIMEOUT_MS = 6_000;
+const ALCHEMY_MAINNET_RPC_PATTERN = /^https:\/\/celo-mainnet\.g\.alchemy\.com\/v2\/[^/]+$/i;
 
 if (!process.env.CELO_RPC_URL) throw new Error('Missing CELO_RPC_URL');
 
 const RPC_URLS = [
-  process.env.CELO_RPC_URL,
+  process.env.CELO_RPC_URL.trim(),
   'https://forno.celo.org',
   'https://rpc.ankr.com/celo',
 ].filter((url, index, values): url is string => Boolean(url) && values.indexOf(url) === index);
+
+if (!ALCHEMY_MAINNET_RPC_PATTERN.test(RPC_URLS[0] ?? '')) {
+  throw new Error('CELO_RPC_URL must point to https://celo-mainnet.g.alchemy.com/v2/<key>');
+}
 
 type ProviderState = {
   url: string;
@@ -31,19 +36,19 @@ function getErrorMessage(error: unknown) {
   return String(error);
 }
 
-function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs: number = RPC_TIMEOUT_MS): Promise<T> {
+function withTimeout<T>(promise: Promise<T>, label: string, timeoutMs = RPC_TIMEOUT_MS): Promise<T> {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
+    const timeoutId = setTimeout(() => {
       reject(new Error(`RPC timeout after ${timeoutMs}ms during ${label}`));
     }, timeoutMs);
 
     promise
       .then((value) => {
-        clearTimeout(timer);
+        clearTimeout(timeoutId);
         resolve(value);
       })
       .catch((error) => {
-        clearTimeout(timer);
+        clearTimeout(timeoutId);
         reject(error);
       });
   });
@@ -76,6 +81,7 @@ function isTimeoutError(error: unknown) {
   return (
     code === 'TIMEOUT' ||
     code === 'ETIMEDOUT' ||
+    code === 'UND_ERR_CONNECT_TIMEOUT' ||
     message.includes('timeout') ||
     message.includes('timed out')
   );
@@ -93,11 +99,9 @@ function isConnectionError(error: unknown) {
     code === 'ECONNREFUSED' ||
     code === 'ENOTFOUND' ||
     code === 'EHOSTUNREACH' ||
-    code === 'UND_ERR_CONNECT_TIMEOUT' ||
     message.includes('network error') ||
-    message.includes('socket hang up') ||
     message.includes('failed to fetch') ||
-    message.includes('missing response') ||
+    message.includes('socket hang up') ||
     message.includes('connection refused') ||
     message.includes('connect timeout')
   );
@@ -105,11 +109,6 @@ function isConnectionError(error: unknown) {
 
 function shouldFailover(error: unknown) {
   return isRateLimitError(error) || isTimeoutError(error) || isConnectionError(error);
-}
-
-function getRpcIndex(url: string) {
-  const index = RPC_URLS.indexOf(url);
-  return index >= 0 ? index : 0;
 }
 
 function destroyProvider(state: ProviderState | null) {
@@ -120,15 +119,28 @@ function destroyProvider(state: ProviderState | null) {
   try {
     state.provider.destroy();
   } catch {
-    // ignore provider shutdown errors
+    // ignore provider teardown errors
   }
+}
+
+function invalidateProvider(url?: string) {
+  if (!cachedProviderState) {
+    return;
+  }
+
+  if (url && cachedProviderState.url !== url) {
+    return;
+  }
+
+  destroyProvider(cachedProviderState);
+  cachedProviderState = null;
 }
 
 async function validateProvider(url: string): Promise<ProviderState> {
   const provider = new JsonRpcProvider(url);
   const network = await withTimeout(provider.getNetwork(), `getNetwork(${url})`);
 
-  if (network.chainId !== CELO_CHAIN_ID) {
+  if (network.chainId !== CELO_MAINNET_CHAIN_ID) {
     destroyProvider({
       url,
       provider,
@@ -136,7 +148,7 @@ async function validateProvider(url: string): Promise<ProviderState> {
       blockNumber: -1,
       initializedAt: new Date().toISOString(),
     });
-    throw new Error(`RPC ${url} returned chainId ${network.chainId.toString()}, expected ${CELO_CHAIN_ID.toString()}`);
+    throw new Error(`Rejected RPC ${url}: expected chainId 42220, received ${network.chainId.toString()}`);
   }
 
   const blockNumber = await withTimeout(provider.getBlockNumber(), `getBlockNumber(${url})`);
@@ -157,7 +169,7 @@ async function validateProvider(url: string): Promise<ProviderState> {
   return state;
 }
 
-async function initializeProvider(startIndex: number): Promise<ProviderState> {
+async function initializeProvider(startIndex = currentRpcIndex): Promise<ProviderState> {
   let lastError: unknown = null;
 
   for (let offset = 0; offset < RPC_URLS.length; offset += 1) {
@@ -166,7 +178,7 @@ async function initializeProvider(startIndex: number): Promise<ProviderState> {
 
     try {
       const state = await validateProvider(url);
-      destroyProvider(cachedProviderState);
+      invalidateProvider();
       cachedProviderState = state;
       currentRpcIndex = index;
       return state;
@@ -174,15 +186,15 @@ async function initializeProvider(startIndex: number): Promise<ProviderState> {
       lastError = error;
       console.warn('[CELO RPC] Provider validation failed', {
         rpcUrl: url,
-        error: getErrorMessage(error),
+        reason: getErrorMessage(error),
       });
     }
   }
 
-  throw new Error(`All RPC endpoints failed: ${getErrorMessage(lastError)}`);
+  throw new Error(`All CELO mainnet RPC endpoints failed: ${getErrorMessage(lastError)}`);
 }
 
-async function ensureProvider(startIndex: number = currentRpcIndex): Promise<ProviderState> {
+async function ensureProvider(startIndex = currentRpcIndex) {
   if (cachedProviderState) {
     return cachedProviderState;
   }
@@ -196,8 +208,8 @@ async function ensureProvider(startIndex: number = currentRpcIndex): Promise<Pro
   return providerInitializationPromise;
 }
 
-async function failoverFrom(url: string, error: unknown): Promise<void> {
-  const failedIndex = getRpcIndex(url);
+async function failoverFrom(url: string, error: unknown) {
+  const failedIndex = Math.max(0, RPC_URLS.indexOf(url));
   const nextIndex = (failedIndex + 1) % RPC_URLS.length;
 
   console.warn('[CELO RPC] Switching provider', {
@@ -206,11 +218,7 @@ async function failoverFrom(url: string, error: unknown): Promise<void> {
     reason: getErrorMessage(error),
   });
 
-  if (cachedProviderState?.url === url) {
-    destroyProvider(cachedProviderState);
-    cachedProviderState = null;
-  }
-
+  invalidateProvider(url);
   currentRpcIndex = nextIndex;
 }
 
@@ -251,9 +259,13 @@ export async function safeRpc<T>(fn: (provider: JsonRpcProvider) => Promise<T>):
         throw error;
       }
 
+      if (isRateLimitError(error)) {
+        invalidateProvider(state.url);
+      }
+
       await failoverFrom(state.url, error);
     }
   }
 
-  throw new Error(`All RPC endpoints failed: ${getErrorMessage(lastError)}`);
+  throw new Error(`All CELO mainnet RPC endpoints failed: ${getErrorMessage(lastError)}`);
 }
