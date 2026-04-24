@@ -2,6 +2,7 @@ import { FormEvent, useMemo, useState } from 'react';
 import { Fingerprint, Loader2, ShieldCheck } from 'lucide-react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
+import { GoogleAuthButton } from '@/components/auth/GoogleAuthButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AuthLayout } from '@/components/auth/AuthLayout';
@@ -11,6 +12,7 @@ import {
   isAdminUser,
   storeSession,
 } from '@/lib/auth';
+
 import { authAPI } from '@/services/apiClient';
 import {
   processCredentialCreationOptions,
@@ -20,6 +22,8 @@ import {
 
 type AuthMode = 'user' | 'admin';
 type PasskeyAction = 'login' | 'signup';
+const GOOGLE_STATE_KEY = 'google_oauth_state';
+const GOOGLE_REDIRECT_KEY = 'google_oauth_redirect';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   const maybeAxiosError = error as {
@@ -32,6 +36,20 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   };
 
   return maybeAxiosError.response?.data?.error || maybeAxiosError.message || fallback;
+};
+
+const getPasskeyErrorMessage = (error: unknown, fallback: string) => {
+  const maybeDomError = error as DOMException & { message?: string };
+
+  if (maybeDomError?.name === 'NotAllowedError') {
+    return 'Passkey request was cancelled or timed out. Please try again.';
+  }
+
+  if (maybeDomError?.message?.includes('challenge')) {
+    return 'Passkey request expired or was malformed. Please try again.';
+  }
+
+  return getErrorMessage(error, fallback);
 };
 
 export const Login = () => {
@@ -136,10 +154,17 @@ export const Login = () => {
       storeSession(result.sessionToken, result.user);
       navigate(redirectTarget, { replace: true });
     } catch (err) {
-      setError(getErrorMessage(err, 'Passkey authentication failed.'));
+      setError(getPasskeyErrorMessage(err, 'Passkey authentication failed.'));
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleGoogleState = () => {
+    const state = crypto.randomUUID();
+    sessionStorage.setItem(GOOGLE_STATE_KEY, state);
+    sessionStorage.setItem(GOOGLE_REDIRECT_KEY, redirectTarget);
+    return state;
   };
 
   return (
@@ -279,6 +304,21 @@ export const Login = () => {
                 'Continue with passkey'
               )}
             </Button>
+
+            <div className="relative py-1">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-border" />
+              </div>
+              <div className="relative flex justify-center text-xs uppercase">
+                <span className="bg-background px-2 text-muted-foreground">or</span>
+              </div>
+            </div>
+
+            <GoogleAuthButton
+              disabled={submitting}
+              getState={handleGoogleState}
+              onError={(message) => setError(message)}
+            />
           </div>
         )}
       </div>

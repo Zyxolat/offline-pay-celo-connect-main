@@ -3,8 +3,10 @@ import path from 'path';
 import { log } from '../utils/logger.js';
 
 const serverRoot = path.join(__dirname, '../..');
+const workspaceRoot = path.join(serverRoot, '..');
 
-dotenv.config({ path: path.join(serverRoot, '.env') });
+dotenv.config({ path: path.join(workspaceRoot, '.env') });
+dotenv.config({ path: path.join(serverRoot, '.env'), override: true });
 
 type DatabaseConfig = {
   url?: string;
@@ -155,6 +157,31 @@ function parseOrigin(name: string, value: string, options: { requireHttpsInProdu
 
   if (parsed.pathname !== '/' || parsed.search || parsed.hash) {
     return failConfig(`${name} must not include a path, query string, or hash`, {
+      value: normalized,
+    });
+  }
+
+  return parsed;
+}
+
+function parseAbsoluteUrl(name: string, value: string, options: { requireHttpsInProduction?: boolean } = {}) {
+  const normalized = value.trim();
+  const parsed = tryParseOrigin(normalized);
+
+  if (!parsed) {
+    return failConfig(`${name} must be a valid absolute URL`, {
+      value,
+    });
+  }
+
+  if (options.requireHttpsInProduction && isProduction() && parsed.protocol !== 'https:') {
+    return failConfig(`${name} must use https:// in production`, {
+      value: normalized,
+    });
+  }
+
+  if (parsed.search || parsed.hash) {
+    return failConfig(`${name} must not include a query string or hash`, {
       value: normalized,
     });
   }
@@ -319,6 +346,32 @@ if (webauthnRpId !== frontendOriginUrl.hostname) {
   });
 }
 
+const googleClientId = getOptionalEnv('GOOGLE_CLIENT_ID') || getOptionalEnv('VITE_GOOGLE_CLIENT_ID') || '';
+const googleClientSecret = getOptionalEnv('GOOGLE_CLIENT_SECRET') || '';
+const googleRedirectUriValue =
+  getOptionalEnv('GOOGLE_REDIRECT_URI') ||
+  new URL('/auth/google/callback', frontendOriginUrl.origin).toString();
+const googleRedirectUriUrl = parseAbsoluteUrl('GOOGLE_REDIRECT_URI', googleRedirectUriValue, {
+  requireHttpsInProduction: true,
+});
+
+if (Boolean(googleClientId) !== Boolean(googleClientSecret)) {
+  failConfig(
+    'Google OAuth requires both GOOGLE_CLIENT_ID (or VITE_GOOGLE_CLIENT_ID) and GOOGLE_CLIENT_SECRET to be set together.',
+    {
+      hasClientId: Boolean(googleClientId),
+      hasClientSecret: Boolean(googleClientSecret),
+    },
+  );
+}
+
+if (googleRedirectUriUrl.origin !== frontendOriginUrl.origin) {
+  failConfig('GOOGLE_REDIRECT_URI must exactly match the frontend origin', {
+    frontendOrigin: frontendOriginUrl.origin,
+    configuredRedirectOrigin: googleRedirectUriUrl.origin,
+  });
+}
+
 const chainId = parseRequiredChainId();
 
 const port = isProduction()
@@ -376,6 +429,13 @@ export const config = {
     rpName: process.env.WEBAUTHN_RP_NAME || 'OfflinePay',
     rpID: webauthnRpId,
     origin: webauthnOriginUrl.origin,
+  },
+
+  google: {
+    enabled: Boolean(googleClientId && googleClientSecret),
+    clientId: googleClientId,
+    clientSecret: googleClientSecret,
+    redirectUri: googleRedirectUriUrl.toString(),
   },
 
   celo: {

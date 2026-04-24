@@ -14,6 +14,19 @@ export const authAPI = {
     withApiErrorLogging('adminLogin', api.post('/auth/admin/login', { email, password })),
   login: (email: string, password: string) =>
     withApiErrorLogging('login', api.post('/auth/login', { email, password })),
+  googleLogin: (code: string, redirectUri: string) =>
+    withApiErrorLogging(
+      'googleLogin',
+      api.post(
+        '/auth/google',
+        { code, redirectUri },
+        {
+          headers: {
+            'X-Requested-With': 'XMLHttpRequest',
+          },
+        },
+      ),
+    ),
   beginPasskeyRegistration: (email: string) =>
     withApiErrorLogging('beginPasskeyRegistration', api.post('/auth/webauthn/register/options', { email })),
   completePasskeyRegistration: (email: string, credential: unknown) =>

@@ -1,42 +1,26 @@
-/**
- * Convert hex string to ArrayBuffer
- */
-export function hexToArrayBuffer(hex: string): ArrayBuffer {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < hex.length; i += 2) {
-    bytes[i / 2] = parseInt(hex.substr(i, 2), 16);
+function padBase64(base64: string): string {
+  const remainder = base64.length % 4;
+  if (remainder === 0) {
+    return base64;
   }
-  return bytes.buffer;
+
+  return `${base64}${'='.repeat(4 - remainder)}`;
 }
 
-/**
- * Convert base64 string to ArrayBuffer
- */
-export function base64ToArrayBuffer(base64: string): ArrayBuffer {
-  // Handle URL-safe base64 (with - and _)
-  const binaryString = atob(base64.replace(/-/g, '+').replace(/_/g, '/'));
+export function base64UrlToUint8Array(base64Url: string): Uint8Array {
+  if (!base64Url || typeof base64Url !== 'string') {
+    throw new Error('Expected a base64url string.');
+  }
+
+  const normalized = padBase64(base64Url.replace(/-/g, '+').replace(/_/g, '/'));
+  const binaryString = atob(normalized);
   const bytes = new Uint8Array(binaryString.length);
+
   for (let i = 0; i < binaryString.length; i++) {
     bytes[i] = binaryString.charCodeAt(i);
   }
-  return bytes.buffer;
-}
 
-/**
- * Detect if string is hex format
- */
-function isHexString(str: string): boolean {
-  return /^[0-9a-fA-F]*$/.test(str) && str.length % 2 === 0;
-}
-
-/**
- * Convert a string (hex or base64) to ArrayBuffer
- */
-export function stringToArrayBuffer(str: string): ArrayBuffer {
-  if (isHexString(str)) {
-    return hexToArrayBuffer(str);
-  }
-  return base64ToArrayBuffer(str);
+  return bytes;
 }
 
 /**
@@ -59,41 +43,56 @@ export function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
  * Process WebAuthn credential creation options
  */
 export function processCredentialCreationOptions(options: any) {
-  if (!options) return options;
-  
-  // Convert challenge from base64/hex string to ArrayBuffer
-  if (typeof options.challenge === 'string') {
-    options.challenge = stringToArrayBuffer(options.challenge);
+  if (!options) {
+    throw new Error('Missing passkey registration options.');
   }
-  
-  // Convert user ID if it's a string
-  if (options.user && typeof options.user.id === 'string') {
-    options.user.id = stringToArrayBuffer(options.user.id);
+
+  if (typeof options.challenge !== 'string') {
+    throw new Error('Registration challenge is missing or invalid.');
   }
-  
-  return options;
+
+  if (!options.user || typeof options.user.id !== 'string') {
+    throw new Error('Registration user identifier is missing or invalid.');
+  }
+
+  return {
+    ...options,
+    challenge: base64UrlToUint8Array(options.challenge),
+    user: {
+      ...options.user,
+      id: base64UrlToUint8Array(options.user.id),
+    },
+    excludeCredentials: Array.isArray(options.excludeCredentials)
+      ? options.excludeCredentials.map((credential: any) => ({
+          ...credential,
+          id: typeof credential.id === 'string' ? base64UrlToUint8Array(credential.id) : credential.id,
+        }))
+      : options.excludeCredentials,
+  };
 }
 
 /**
  * Process WebAuthn credential request options
  */
 export function processCredentialRequestOptions(options: any) {
-  if (!options) return options;
-  
-  // Convert challenge from base64/hex string to ArrayBuffer
-  if (typeof options.challenge === 'string') {
-    options.challenge = stringToArrayBuffer(options.challenge);
+  if (!options) {
+    throw new Error('Missing passkey login options.');
   }
-  
-  // Convert allowed credentials
-  if (options.allowCredentials && Array.isArray(options.allowCredentials)) {
-    options.allowCredentials = options.allowCredentials.map((cred: any) => ({
-      ...cred,
-      id: typeof cred.id === 'string' ? stringToArrayBuffer(cred.id) : cred.id,
-    }));
+
+  if (typeof options.challenge !== 'string') {
+    throw new Error('Login challenge is missing or invalid.');
   }
-  
-  return options;
+
+  return {
+    ...options,
+    challenge: base64UrlToUint8Array(options.challenge),
+    allowCredentials: Array.isArray(options.allowCredentials)
+      ? options.allowCredentials.map((credential: any) => ({
+          ...credential,
+          id: typeof credential.id === 'string' ? base64UrlToUint8Array(credential.id) : credential.id,
+        }))
+      : options.allowCredentials,
+  };
 }
 
 const serializeTransports = (response: AuthenticatorResponse) => {

@@ -40,6 +40,10 @@ function getGoogleClientId() {
 
 export const GOOGLE_CLIENT_ID = getGoogleClientId();
 
+export function getGoogleRedirectUri() {
+  return `${getAppBaseUrl()}/auth/google/callback`;
+}
+
 export function getAppBaseUrl() {
   const configured = getViteEnv('VITE_APP_URL');
 

@@ -1,29 +1,40 @@
-import { useEffect, useRef, useState } from 'react';
-import { GOOGLE_CLIENT_ID } from '@/config/env';
+import { useEffect, useState } from 'react';
+import { GOOGLE_CLIENT_ID, getGoogleRedirectUri } from '@/config/env';
+import { Button } from '@/components/ui/button';
 
 declare global {
   interface Window {
-    google?: any;
+    google?: {
+      accounts?: {
+        oauth2?: {
+          initCodeClient: (config: {
+            client_id: string;
+            scope: string;
+            ux_mode: 'redirect' | 'popup';
+            redirect_uri?: string;
+            state?: string;
+            select_account?: boolean;
+            error_callback?: (error: { type?: string }) => void;
+          }) => {
+            requestCode: () => void;
+          };
+        };
+      };
+    };
   }
 }
 
 interface GoogleAuthButtonProps {
-  onCredential: (credential: string) => void;
-  text?: 'continue_with' | 'signin_with' | 'signup_with';
+  disabled?: boolean;
+  getState: () => string;
+  onError: (message: string) => void;
 }
 
-export const GoogleAuthButton = ({ onCredential, text = 'continue_with' }: GoogleAuthButtonProps) => {
-  const buttonRef = useRef<HTMLDivElement | null>(null);
-  const onCredentialRef = useRef(onCredential);
-  const initializedClientIdRef = useRef<string | null>(null);
-  const [scriptReady, setScriptReady] = useState(Boolean(window.google?.accounts?.id));
+export const GoogleAuthButton = ({ disabled = false, getState, onError }: GoogleAuthButtonProps) => {
+  const [scriptReady, setScriptReady] = useState(Boolean(window.google?.accounts?.oauth2));
 
   useEffect(() => {
-    onCredentialRef.current = onCredential;
-  }, [onCredential]);
-
-  useEffect(() => {
-    if (window.google?.accounts?.id) {
+    if (window.google?.accounts?.oauth2) {
       setScriptReady(true);
       return;
     }
@@ -56,35 +67,47 @@ export const GoogleAuthButton = ({ onCredential, text = 'continue_with' }: Googl
     };
   }, []);
 
-  useEffect(() => {
-    if (!scriptReady || !window.google || !buttonRef.current) {
-      return;
-    }
-
+  const handleGoogleLogin = () => {
     const clientId = GOOGLE_CLIENT_ID;
     if (!clientId) {
+      onError('Google sign-in is not configured for this environment.');
       return;
     }
 
-    if (initializedClientIdRef.current !== clientId) {
-      window.google.accounts.id.initialize({
-        client_id: clientId,
-        callback: ({ credential }: { credential: string }) => {
-          onCredentialRef.current(credential);
-        },
-      });
-      initializedClientIdRef.current = clientId;
+    if (!scriptReady || !window.google?.accounts?.oauth2) {
+      onError('Google sign-in is still loading. Please try again.');
+      return;
     }
 
-    buttonRef.current.innerHTML = '';
-    window.google.accounts.id.renderButton(buttonRef.current, {
-      type: 'standard',
-      theme: 'outline',
-      text,
-      shape: 'pill',
-      width: 320,
-    });
-  }, [scriptReady, text]);
+    const codeClient = window.google.accounts.oauth2.initCodeClient({
+      client_id: clientId,
+      scope: 'openid email profile',
+      ux_mode: 'redirect',
+      redirect_uri: getGoogleRedirectUri(),
+      state: getState(),
+      select_account: true,
+      error_callback: (error) => {
+        if (error.type === 'popup_closed') {
+          onError('Google sign-in was cancelled before completion.');
+          return;
+        }
 
-  return <div ref={buttonRef} className="flex justify-center" />;
+        onError('Google sign-in could not be started. Please try again.');
+      },
+    });
+
+    codeClient.requestCode();
+  };
+
+  return (
+    <Button
+      className="w-full"
+      type="button"
+      variant="outline"
+      disabled={disabled || !GOOGLE_CLIENT_ID}
+      onClick={handleGoogleLogin}
+    >
+      Continue with Google
+    </Button>
+  );
 };

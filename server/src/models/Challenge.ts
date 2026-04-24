@@ -49,6 +49,17 @@ export const ChallengeModel = {
     return result.rows[0] || null;
   },
 
+  async deleteActiveByUser(userId: string, purpose: 'registration' | 'login' | 'payment'): Promise<void> {
+    await pool.query(
+      `
+        DELETE FROM webauthn_challenges
+        WHERE user_id = $1
+          AND purpose = $2
+      `,
+      [userId, purpose]
+    );
+  },
+
   async findActivePaymentChallenge(paymentId: string): Promise<WebAuthnChallenge | null> {
     const result = await pool.query(
       `SELECT * FROM webauthn_challenges
