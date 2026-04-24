@@ -9,6 +9,7 @@ import { ChainIndexerStateModel } from '../models/ChainIndexerState.js';
 import { UserModel } from '../models/User.js';
 import { transactionService } from './transactionService.js';
 import { celoService } from './celoService.js';
+import { getCurrentRpc, safeRpc } from '../lib/provider.js';
 import { log, normalizeError } from '../utils/logger.js';
 
 type SupportedContractMethod = 'createPayment' | 'claimPayment' | 'acceptPayment' | 'refundPayment' | 'cancelPayment';
@@ -85,6 +86,7 @@ const FAILURE_THRESHOLD = Math.max(1, config.celo.eventIndexerFailureThreshold |
 const INTEGRITY_INTERVAL_MS = Math.max(30_000, config.celo.eventIndexerIntegrityIntervalMs || 300_000);
 const INTEGRITY_SAMPLE_SIZE = Math.max(1, config.celo.eventIndexerIntegritySampleSize || 5);
 const INTEGRITY_LOOKBACK_BLOCKS = Math.max(1, config.celo.eventIndexerIntegrityLookbackBlocks || 250);
+const MAX_RANGE = 2000;
 const INDEXED_EVENTS: IndexedPaymentEventName[] = ['PaymentCreated', 'PaymentClaimed', 'PaymentRefunded'];
 const normalizeAddress = (address: string) => ethers.getAddress(address);
 const indexedContracts = celoService.getIndexedContracts();
@@ -109,7 +111,7 @@ const getContractVersionForAddress = (address: string) =>
   contractVersionByAddress.get(normalizeAddress(address)) ?? 'v1';
 
 const getReceiptConfirmations = async (receipt: TransactionReceipt) => {
-  const latestBlock = await celoService.getHttpProvider().getBlockNumber();
+  const latestBlock = await safeRpc((provider) => provider.getBlockNumber());
   return Math.max(0, latestBlock - receipt.blockNumber + 1);
 };
 
@@ -152,11 +154,18 @@ const parseContractTransaction = (transaction: TransactionResponse) => {
 };
 
 const resolveRecipientAndAmountFromPayment = async (paymentId: number, contractAddress: string, abiVersion: string) => {
-  const payment = await celoService.getTimeLockContract(
-    celoService.getHttpProvider(),
-    contractAddress,
-    abiVersion as TimeLockAbiVersion,
-  ).getPayment(paymentId);
+  console.log('RPC:', getCurrentRpc() ?? process.env.CELO_RPC_URL ?? 'uninitialized');
+  console.log('Contract:', contractAddress);
+
+  const payment = await safeRpc(async (provider) => {
+    const contract = await celoService.getTimeLockContract(
+      contractAddress,
+      abiVersion as TimeLockAbiVersion,
+      provider,
+    );
+
+    return contract.getPayment(paymentId);
+  });
 
   return {
     recipient: normalizeAddress(payment.recipient),
@@ -324,6 +333,19 @@ async function withTransaction<T>(work: (client: PoolClient) => Promise<T>): Pro
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function safeGetLogs(filter: ethers.Filter) {
+  for (let i = 0; i < 3; i += 1) {
+    try {
+      return await safeRpc((provider) => provider.getLogs(filter));
+    } catch (e) {
+      console.warn('Retry getLogs', i, e);
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  throw new Error('Failed to fetch logs after retries');
 }
 
 function emitIndexerAlert(level: IndexerAlertLevel, code: string, message: string, meta?: Record<string, unknown>) {
@@ -554,16 +576,50 @@ export const contractIndexerService = {
 
   async queryConfirmedLogsChunk(fromBlock: number, toBlock: number) {
     const allLogs: EventLog[] = [];
-    const contracts = celoService.getTimeLockContracts();
+    const contracts = await celoService.getTimeLockContracts();
 
     for (const contractEntry of contracts) {
-      const [createdLogs, claimedLogs, refundedLogs] = await Promise.all([
-        contractEntry.contract.queryFilter(contractEntry.contract.filters.PaymentCreated(), fromBlock, toBlock),
-        contractEntry.contract.queryFilter(contractEntry.contract.filters.PaymentClaimed(), fromBlock, toBlock),
-        contractEntry.contract.queryFilter(contractEntry.contract.filters.PaymentRefunded(), fromBlock, toBlock),
-      ]);
+      console.log('RPC:', getCurrentRpc() ?? process.env.CELO_RPC_URL ?? 'uninitialized');
+      console.log('Contract:', contractEntry.address);
 
-      allLogs.push(...[...createdLogs, ...claimedLogs, ...refundedLogs].filter(isEventLog));
+      const topics = [
+        contractEntry.interface.getEvent('PaymentCreated')!.topicHash,
+        contractEntry.interface.getEvent('PaymentClaimed')!.topicHash,
+        contractEntry.interface.getEvent('PaymentRefunded')!.topicHash,
+      ];
+
+      const logs = await safeGetLogs({
+        address: contractEntry.address,
+        fromBlock,
+        toBlock,
+        topics: [topics],
+      });
+
+      const parsedLogs = logs.flatMap((logEntry) => {
+        try {
+          const parsed = contractEntry.interface.parseLog({
+            topics: [...logEntry.topics],
+            data: logEntry.data,
+          });
+
+          if (!parsed) {
+            return [];
+          }
+
+          return [{
+            ...logEntry,
+            args: parsed.args,
+            eventName: parsed.name,
+            eventSignature: parsed.signature,
+            fragment: parsed.fragment,
+            interface: contractEntry.interface,
+          } as EventLog];
+        } catch {
+          return [];
+        }
+      });
+
+      allLogs.push(...parsedLogs.filter(isEventLog));
     }
 
     return allLogs.sort((left, right) => {
@@ -703,7 +759,7 @@ export const contractIndexerService = {
     this.status.integrityLastCheckedAt = new Date().toISOString();
 
     try {
-      const confirmedBlock = this.status.confirmedBlock ?? await celoService.getHttpProvider().getBlockNumber() - CONFIRMATIONS;
+      const confirmedBlock = this.status.confirmedBlock ?? await safeRpc((provider) => provider.getBlockNumber()) - CONFIRMATIONS;
       if (confirmedBlock < 0) {
         return;
       }
@@ -858,7 +914,7 @@ export const contractIndexerService = {
       this.status.lastSyncError = null;
 
       try {
-        const latestBlock = await celoService.getHttpProvider().getBlockNumber();
+        const latestBlock = await safeRpc((provider) => provider.getBlockNumber());
         const confirmedBlock = latestBlock - CONFIRMATIONS;
 
         this.status.currentBlock = latestBlock;
@@ -877,7 +933,8 @@ export const contractIndexerService = {
           return;
         }
 
-        await this.processConfirmedRange(fromBlock, confirmedBlock);
+        const toBlock = Math.min(fromBlock + MAX_RANGE, confirmedBlock);
+        await this.processConfirmedRange(fromBlock, toBlock);
         await this.refreshLag();
         this.status.consecutiveSyncFailures = 0;
         if (this.status.lagBlocks !== null && this.status.lagBlocks > ALERT_LAG_BLOCKS) {
@@ -1096,7 +1153,7 @@ export const contractIndexerService = {
 
   async getStatus() {
     try {
-      const latestBlock = await celoService.getHttpProvider().getBlockNumber();
+      const latestBlock = await safeRpc((provider) => provider.getBlockNumber());
       this.status.currentBlock = latestBlock;
       this.status.confirmedBlock = latestBlock - CONFIRMATIONS >= 0 ? latestBlock - CONFIRMATIONS : null;
       await this.refreshLag();

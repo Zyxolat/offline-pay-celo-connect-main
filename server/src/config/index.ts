@@ -275,6 +275,7 @@ const primaryFrontendOrigin = frontendOrigins[0];
 const frontendOriginUrl = parseOrigin('FRONTEND_URL', primaryFrontendOrigin, {
   requireHttpsInProduction: true,
 });
+if (!process.env.CELO_RPC_URL) throw new Error('Missing CELO_RPC_URL');
 const webauthnOriginValue = requireEnv('WEBAUTHN_ORIGIN', {
   allowInDevFallback: primaryFrontendOrigin,
 });
@@ -362,10 +363,10 @@ export const config = {
 
   celo: {
     network: process.env.CELO_NETWORK || 'mainnet',
-    rpcUrl: process.env.CELO_RPC_URL || 'https://forno.celo.org',
+    rpcUrl: process.env.CELO_RPC_URL,
     wsRpcUrl:
       getOptionalEnv('CELO_WS_RPC_URL') ||
-      deriveWebSocketUrl(process.env.CELO_RPC_URL || 'https://forno.celo.org'),
+      deriveWebSocketUrl(process.env.CELO_RPC_URL),
     chainId: parseInt(process.env.CELO_CHAIN_ID || '42220', 10),
     cUSDAddress: process.env.CELO_CUSD_ADDRESS || '0x765DE816845861e75A25fCA122bb6bAA3c1E852a',
     withdrawPrivateKey: process.env.CELO_WITHDRAW_PRIVATE_KEY || '',

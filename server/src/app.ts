@@ -17,6 +17,7 @@ import queueRoutes from './routes/queue.js';
 import transactionRoutes from './routes/transactions.js';
 import adminRoutes from './routes/admin.js';
 import { contractIndexerService } from './services/contractIndexerService.js';
+import { getCurrentRpc, getRpcHealth } from './lib/provider.js';
 
 const app = express();
 const localhostOriginPattern = /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::\d+)?$/;
@@ -35,19 +36,44 @@ app.get('/ping', (_req: Request, res: Response) => {
   res.status(200).send('pong');
 });
 
-app.get('/health', (_req: Request, res: Response) => {
+app.get('/health', async (_req: Request, res: Response) => {
   const database = getDatabaseStatus();
+  let rpc: Awaited<ReturnType<typeof getRpcHealth>> | { rpcUrl: string | null; latestBlock: null; chainId: null; error: string };
+
+  try {
+    rpc = await getRpcHealth();
+  } catch (error) {
+    rpc = {
+      rpcUrl: getCurrentRpc(),
+      latestBlock: null,
+      chainId: null,
+      error: normalizeError(error).message,
+    };
+  }
 
   res.status(200).json({
     status: 'ok',
     uptime: process.uptime(),
     db: database.phase,
+    rpc,
     timestamp: new Date().toISOString(),
   });
 });
 
-app.get('/status', (_req: Request, res: Response) => {
+app.get('/status', async (_req: Request, res: Response) => {
   const database = getDatabaseStatus();
+  let rpc: Awaited<ReturnType<typeof getRpcHealth>> | { rpcUrl: string | null; latestBlock: null; chainId: null; error: string };
+
+  try {
+    rpc = await getRpcHealth();
+  } catch (error) {
+    rpc = {
+      rpcUrl: getCurrentRpc(),
+      latestBlock: null,
+      chainId: null,
+      error: normalizeError(error).message,
+    };
+  }
 
   res.status(200).json({
     app: {
@@ -66,8 +92,31 @@ app.get('/status', (_req: Request, res: Response) => {
       cooldownUntil: database.cooldownUntil,
       lastError: database.lastError,
     },
+    rpc,
     timestamp: new Date().toISOString(),
   });
+});
+
+app.get('/rpc/health', async (_req: Request, res: Response) => {
+  try {
+    const rpc = await getRpcHealth();
+    res.status(200).json({
+      status: 'ok',
+      rpc,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      rpc: {
+        rpcUrl: getCurrentRpc(),
+        latestBlock: null,
+        chainId: null,
+        error: normalizeError(error).message,
+      },
+      timestamp: new Date().toISOString(),
+    });
+  }
 });
 
 app.get('/indexer/status', async (_req: Request, res: Response) => {
