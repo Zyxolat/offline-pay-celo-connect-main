@@ -37,7 +37,7 @@ interface ProviderError {
   };
 }
 
-export type TimeLockPaymentStatus = "locked" | "ready" | "accepted" | "refunded";
+export type TimeLockPaymentStatus = "locked" | "ready" | "accepted";
 
 export interface TimeLockPaymentView {
   id: number;
@@ -45,41 +45,41 @@ export interface TimeLockPaymentView {
   recipient: string;
   amount: string;
   amountWei: bigint;
+  unlockTime: number;
+  /** @deprecated use unlockTime */
   deadline: number;
+  /** @deprecated use unlockTime */
   releaseTime: number;
   claimed: boolean;
-  refunded: boolean;
   status: TimeLockPaymentStatus;
   isSender: boolean;
   isRecipient: boolean;
   isClaimable: boolean;
   canAccept: boolean;
-  canRefund: boolean;
 }
 
 export const getCurrentUnixTime = () => Math.floor(Date.now() / 1000);
-export const CLAIMABILITY_BUFFER_SECONDS = 5;
 
+/**
+ * A payment is claimable only when the current UTC time (in seconds) is at or
+ * past the contract-stored unlockTime. No early-claim buffer is applied — the
+ * contract itself enforces the same check via block.timestamp.
+ */
 export const isPaymentClaimable = (
   currentTime: number,
-  releaseTime: number,
-  bufferSeconds = CLAIMABILITY_BUFFER_SECONDS,
-) => currentTime >= Math.max(0, releaseTime - bufferSeconds);
+  unlockTime: number,
+) => currentTime >= unlockTime;
 
 export const getPaymentStatus = (
-  payment: Pick<TimeLockPaymentView, "claimed" | "refunded">,
+  payment: Pick<TimeLockPaymentView, "claimed">,
   currentTime: number,
-  releaseTime: number,
+  unlockTime: number,
 ): TimeLockPaymentStatus => {
-  if (payment.refunded) {
-    return "refunded";
-  }
-
   if (payment.claimed) {
     return "accepted";
   }
 
-  return isPaymentClaimable(currentTime, releaseTime) ? "ready" : "locked";
+  return isPaymentClaimable(currentTime, unlockTime) ? "ready" : "locked";
 };
 
 export interface CreatePaymentResult {
@@ -356,21 +356,21 @@ const mapPayment = (
     sender: string;
     recipient: string;
     amount: bigint;
-    deadline?: bigint;
+    unlockTime: bigint;
     claimed: boolean;
-    refunded: boolean;
   },
   viewer: string,
 ): TimeLockPaymentView => {
   const now = getCurrentUnixTime();
-  const releaseTime = payment.deadline !== undefined ? Number(payment.deadline) : now;
+  // unlockTime is stored as a UTC Unix timestamp by the contract (block.timestamp + duration)
+  const unlockTime = Number(payment.unlockTime);
   const normalizedViewer = viewer ? getAddress(viewer) : "";
   const sender = getAddress(payment.sender);
   const recipient = getAddress(payment.recipient);
   const isSender = normalizedViewer === sender;
   const isRecipient = normalizedViewer === recipient;
-  const isClaimable = isPaymentClaimable(now, releaseTime);
-  const status = getPaymentStatus(payment, now, releaseTime);
+  const isClaimable = isPaymentClaimable(now, unlockTime);
+  const status = getPaymentStatus(payment, now, unlockTime);
 
   return {
     id: paymentId,
@@ -378,16 +378,16 @@ const mapPayment = (
     recipient,
     amount: formatEther(payment.amount),
     amountWei: payment.amount,
-    deadline: releaseTime,
-    releaseTime,
+    unlockTime,
+    // Keep deprecated aliases for backward compatibility with existing UI components
+    deadline: unlockTime,
+    releaseTime: unlockTime,
     claimed: payment.claimed,
-    refunded: payment.refunded,
     status,
     isSender,
     isRecipient,
     isClaimable,
-    canAccept: isRecipient && !payment.claimed && !payment.refunded && isClaimable,
-    canRefund: isSender && !payment.claimed && !payment.refunded,
+    canAccept: isRecipient && !payment.claimed && isClaimable,
   };
 };
 
@@ -531,13 +531,10 @@ export const createPayment = async (recipient: string, duration: number, amount:
   }
 };
 
-export const estimatePaymentActionGas = async (paymentId: number, action: "accept" | "refund") => {
+export const estimatePaymentActionGas = async (paymentId: number) => {
   const { signer, provider } = await connectWallet();
   const contract = getContract(signer);
-  const gasLimit = action === "accept"
-    ? await getClaimGasEstimator(contract)(paymentId)
-    : await contract.refundPayment.estimateGas(paymentId);
-
+  const gasLimit = await getClaimGasEstimator(contract)(paymentId);
   return buildGasEstimate(gasLimit, provider);
 };
 
@@ -550,12 +547,14 @@ export const acceptPayment = async (paymentId: number): Promise<ContractActionRe
       throw new Error("This payment has already been claimed.");
     }
 
-    if (latestPayment.refunded) {
-      throw new Error("This payment was refunded and can no longer be claimed.");
-    }
-
     if (!latestPayment.isRecipient) {
       throw new Error("Only the intended recipient can claim this payment.");
+    }
+
+    if (!latestPayment.isClaimable) {
+      const now = getCurrentUnixTime();
+      const remaining = Math.max(0, latestPayment.unlockTime - now);
+      throw new Error(`This payment is still locked. It unlocks in ${remaining} second${remaining === 1 ? "" : "s"}.`);
     }
 
     const contract = getContract(signer);
@@ -581,55 +580,6 @@ export const acceptPayment = async (paymentId: number): Promise<ContractActionRe
       status: "confirmed",
       confirmations: receipt?.confirmations ?? 1,
       note: `Contract payment #${paymentId} claimed`,
-    });
-
-    return {
-      hash: receipt?.hash || tx.hash,
-    };
-  } catch (error) {
-    throw new Error(getFriendlyErrorMessage(error));
-  }
-};
-
-export const refundPayment = async (paymentId: number): Promise<ContractActionResult> => {
-  try {
-    const { signer, address } = await connectWallet();
-    const latestPayment = await getLatestPaymentForViewer(paymentId, address);
-
-    if (latestPayment.claimed) {
-      throw new Error("This payment has already been claimed.");
-    }
-
-    if (latestPayment.refunded) {
-      throw new Error("This payment has already been refunded.");
-    }
-
-    if (!latestPayment.isSender) {
-      throw new Error("Only the original sender can refund this payment.");
-    }
-
-    const contract = getContract(signer);
-    const tx = await contract.refundPayment(paymentId);
-    console.log("TX SENT:", tx.hash);
-    await syncTransactionRecord({
-      txHash: tx.hash,
-      recipient: latestPayment.recipient,
-      amount: latestPayment.amount,
-      currency: "CELO",
-      status: "submitted",
-      note: `Contract payment #${paymentId} refund submitted`,
-    });
-    const receipt = await tx.wait();
-    console.log("TX CONFIRMED");
-    console.log("FETCHED TX:", receipt);
-    await syncTransactionRecord({
-      txHash: receipt?.hash || tx.hash,
-      recipient: latestPayment.recipient,
-      amount: latestPayment.amount,
-      currency: "CELO",
-      status: "confirmed",
-      confirmations: receipt?.confirmations ?? 1,
-      note: `Contract payment #${paymentId} refunded`,
     });
 
     return {
@@ -682,19 +632,11 @@ export const subscribeToPaymentEvents = (address: string, listener: () => void) 
     }
   };
 
-  const handleRefunded = (_paymentId: bigint, sender: string) => {
-    if (getAddress(sender) === normalizedAddress) {
-      refreshFromEvent();
-    }
-  };
-
   contract.on("PaymentCreated", handleCreated);
   contract.on("PaymentClaimed", handleClaimed);
-  contract.on("PaymentRefunded", handleRefunded);
 
   return () => {
     contract.off("PaymentCreated", handleCreated);
     contract.off("PaymentClaimed", handleClaimed);
-    contract.off("PaymentRefunded", handleRefunded);
   };
 };

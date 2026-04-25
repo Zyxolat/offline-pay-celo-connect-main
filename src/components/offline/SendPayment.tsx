@@ -30,7 +30,6 @@ export const SendPayment = () => {
     connectWallet,
     refresh,
     acceptPayment,
-    refundPayment,
     isWrongNetwork,
     switchNetwork,
     switchingNetwork,
@@ -58,7 +57,7 @@ export const SendPayment = () => {
 
   useEffect(() => {
     const estimateActionGas = async () => {
-      if (!selectedPayment || !account || (!selectedPayment.canAccept && !selectedPayment.canRefund)) {
+      if (!selectedPayment || !account || !selectedPayment.canAccept) {
         setSelectedActionGas("");
         return;
       }
@@ -66,10 +65,7 @@ export const SendPayment = () => {
       setEstimatingActionGas(true);
 
       try {
-        const estimate = await estimatePaymentActionGas(
-          selectedPayment.id,
-          selectedPayment.canAccept ? "accept" : "refund",
-        );
+        const estimate = await estimatePaymentActionGas(selectedPayment.id);
         setSelectedActionGas(estimate.feeCelo);
       } catch {
         setSelectedActionGas("");
@@ -114,16 +110,6 @@ export const SendPayment = () => {
       toast.success("Payment claimed.", { id: loadingToastId });
     } catch (acceptError) {
       toast.error(acceptError instanceof Error ? acceptError.message : "Unable to claim payment.", { id: loadingToastId });
-    }
-  };
-
-  const handleRefund = async (paymentId: number) => {
-    const loadingToastId = toast.loading("Refund transaction pending...");
-    try {
-      await refundPayment(paymentId);
-      toast.success("Refund completed.", { id: loadingToastId });
-    } catch (refundError) {
-      toast.error(refundError instanceof Error ? refundError.message : "Unable to refund payment.", { id: loadingToastId });
     }
   };
 
@@ -249,7 +235,6 @@ export const SendPayment = () => {
             currentTime={currentTime}
             transaction={selectedPayment}
             onAccept={handleAccept}
-            onRefund={handleRefund}
             actionLoadingId={actingOnPaymentId}
             lastTransactionHash={lastTransactionHash}
             gasEstimate={selectedActionGas}

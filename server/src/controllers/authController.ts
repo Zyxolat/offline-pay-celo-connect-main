@@ -57,6 +57,16 @@ const GOOGLE_STATE_TTL = '10m';
 const GOOGLE_CALLBACK_PATH = '/auth/google/callback';
 const GOOGLE_FRONTEND_CALLBACK_PATH = '/auth/google/callback';
 
+// Log Google OAuth configuration at startup for easier debugging
+if (config.google.enabled) {
+  log('INFO', 'Google OAuth configured', {
+    callbackUrl: config.google.callbackUrl,
+    clientIdConfigured: Boolean(config.google.clientId),
+  });
+} else {
+  log('WARN', 'Google OAuth is disabled (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET not set)');
+}
+
 type SessionAuthMethod = 'admin' | 'passkey' | 'google';
 
 type GoogleStatePayload = {

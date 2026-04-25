@@ -6,7 +6,6 @@ interface ClaimSectionProps {
   currentTime: number;
   transaction: TimeLockPaymentView | null;
   onAccept: (id: number) => void | Promise<void>;
-  onRefund: (id: number) => void | Promise<void>;
   actionLoadingId?: number | null;
   lastTransactionHash?: string;
   gasEstimate?: string;
@@ -15,7 +14,6 @@ interface ClaimSectionProps {
 export const ClaimSection = ({
   currentTime,
   onAccept,
-  onRefund,
   transaction,
   actionLoadingId,
   lastTransactionHash,
@@ -26,29 +24,28 @@ export const ClaimSection = ({
       <section className="offlinepay-claim-card offlinepay-empty-state">
         <p className="offlinepay-eyebrow">Payment actions</p>
         <h3>Select a payment</h3>
-        <p>Connect your wallet, create a payment, then manage recipient acceptance or sender refunds here.</p>
+        <p>Connect your wallet, create a payment, then claim incoming payments here once the unlock time passes.</p>
       </section>
     );
   }
 
-  const releaseTimeMs = transaction.releaseTime * 1000;
-  const isClaimable = isPaymentClaimable(currentTime, transaction.releaseTime);
+  const unlockTimeMs = transaction.unlockTime * 1000;
+  const isClaimable = isPaymentClaimable(currentTime, transaction.unlockTime);
   const isWorking = actionLoadingId === transaction.id;
+  const remainingSeconds = Math.max(0, transaction.unlockTime - currentTime);
   const statusLabel =
     transaction.status === "accepted"
       ? "claimed"
-      : transaction.status === "refunded"
-        ? "refunded"
-        : isClaimable
-          ? "ready to claim"
-          : "pending";
+      : isClaimable
+        ? "ready to claim"
+        : "locked";
 
   return (
     <section className="offlinepay-claim-card">
       <div className="offlinepay-section-heading offlinepay-section-heading--compact">
         <p className="offlinepay-eyebrow">Payment actions</p>
         <h3>Selected payment</h3>
-        <p>Recipients can claim as soon as the release time passes. Senders can cancel only while funds are still pending.</p>
+        <p>Recipients can claim funds only after the sender-set unlock time has passed (UTC).</p>
       </div>
 
       <dl className="offlinepay-claim-details">
@@ -65,8 +62,8 @@ export const ClaimSection = ({
           <dd>{transaction.sender}</dd>
         </div>
         <div>
-          <dt>Release time</dt>
-          <dd>{new Date(releaseTimeMs).toLocaleString()}</dd>
+          <dt>Unlock time (UTC)</dt>
+          <dd>{new Date(unlockTimeMs).toUTCString()}</dd>
         </div>
         <div>
           <dt>Status</dt>
@@ -74,7 +71,7 @@ export const ClaimSection = ({
         </div>
         <div>
           <dt>Countdown</dt>
-          <dd>{isClaimable ? "0s" : `${Math.max(0, transaction.releaseTime - currentTime)}s`}</dd>
+          <dd>{isClaimable ? "Unlocked" : `${remainingSeconds}s remaining`}</dd>
         </div>
       </dl>
 
@@ -88,21 +85,13 @@ export const ClaimSection = ({
         </Button>
       ) : null}
 
-      {transaction.canRefund ? (
-        <Button onClick={() => onRefund(transaction.id)} disabled={isWorking} className="w-full">
-          {isWorking ? "Refunding..." : "Refund"}
-        </Button>
-      ) : null}
-
-      {!transaction.canAccept && !transaction.canRefund ? (
+      {!transaction.canAccept ? (
         <Button disabled className="w-full">
           {transaction.status === "accepted"
-            ? "Payment Accepted"
-            : transaction.status === "refunded"
-              ? "Payment Refunded"
-              : isClaimable
-                ? "Recipient Wallet Required"
-                : "Pending"}
+            ? "Payment Claimed"
+            : isClaimable
+              ? "Recipient Wallet Required"
+              : "Locked — waiting for unlock time"}
         </Button>
       ) : null}
 

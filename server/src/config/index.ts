@@ -366,8 +366,8 @@ if (Boolean(googleClientId) !== Boolean(googleClientSecret)) {
   );
 }
 
-if (googleCallbackUrl.pathname !== '/auth/google/callback') {
-  failConfig('GOOGLE_CALLBACK_URL must use the /auth/google/callback path', {
+if (googleCallbackUrl.pathname !== '/auth/google/callback' && googleCallbackUrl.pathname !== '/api/auth/google/callback') {
+  failConfig('GOOGLE_CALLBACK_URL must use the /auth/google/callback or /api/auth/google/callback path', {
     configuredCallbackUrl: googleCallbackUrl.toString(),
   });
 }
