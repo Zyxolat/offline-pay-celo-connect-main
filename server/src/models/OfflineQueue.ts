@@ -1,4 +1,4 @@
-import pool from '../config/database.js';
+import pool from '../config/database';
 import { randomUUID } from 'crypto';
 
 export type QueueStatus = 'pending' | 'synced' | 'failed';

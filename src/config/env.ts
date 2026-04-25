@@ -28,22 +28,6 @@ function normalizeAbsoluteUrl(value: string) {
   return value.replace(/\/+$/, '');
 }
 
-function getGoogleClientId() {
-  const clientId = getViteEnv('VITE_GOOGLE_CLIENT_ID');
-
-  if (clientId) {
-    return clientId;
-  }
-
-  if (import.meta.env.PROD) {
-    throw new Error('VITE_GOOGLE_CLIENT_ID is required in production.');
-  }
-
-  return '';
-}
-
-export const GOOGLE_CLIENT_ID = getGoogleClientId();
-
 export function getAppBaseUrl() {
   const configured = getViteEnv('VITE_APP_URL');
 

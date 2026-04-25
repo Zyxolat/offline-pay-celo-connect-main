@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { paymentController } from '../controllers/paymentController.js';
-import { authMiddleware } from '../middleware/auth.js';
-import { paymentLimiter } from '../middleware/rateLimiter.js';
+import { paymentController } from '../controllers/paymentController';
+import { authMiddleware } from '../middleware/auth';
+import { paymentLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 

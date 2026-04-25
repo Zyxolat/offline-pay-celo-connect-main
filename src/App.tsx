@@ -14,9 +14,9 @@ import WalletProviders from "./providers/WalletProviders";
 import { logWalletConnection } from "@/lib/walletConnectionDebug";
 import { resumeWalletConnectionFromUri } from "@/lib/reown";
 
-const Index = lazy(() => import("./pages/Index.tsx"));
+import Index from "./pages/Index.tsx";
+import LearnMorePage from "./pages/LearnMore.tsx";
 const NotFound = lazy(() => import("./pages/NotFound.tsx"));
-const LearnMorePage = lazy(() => import("./pages/LearnMore.tsx"));
 const AuthPages = lazy(() => import("./pages/Auth/index.tsx").then((module) => ({ default: module.AuthPages })));
 const Dashboard = lazy(() => import("./pages/Dashboard.tsx").then((module) => ({ default: module.Dashboard })));
 const SendPage = lazy(() => import("./pages/Send.tsx").then((module) => ({ default: module.SendPage })));
@@ -127,15 +127,9 @@ const SafeRoute = ({
 };
 
 const AppRoutes = () => {
-  const location = useLocation();
-
   const renderSafeRoute = (routeName: string, element: React.ReactNode) => (
     <SafeRoute routeName={routeName}>{element}</SafeRoute>
   );
-
-  useEffect(() => {
-    console.log('[AppRoutes] route hit', { path: location.pathname });
-  }, [location.pathname]);
 
   return (
     <Routes>
@@ -143,7 +137,7 @@ const AppRoutes = () => {
       <Route path="/wc" element={renderSafeRoute("Wallet Callback", <WalletCallbackRoute />)} />
       <Route path="/learn-more" element={renderSafeRoute("Learn More", <LearnMorePage />)} />
       <Route path="/login" element={renderSafeRoute("Login Redirect", <Navigate to="/auth/login" replace />)} />
-      <Route path="/signup" element={renderSafeRoute("Signup Redirect", <Navigate to="/auth/login" replace />)} />
+      <Route path="/signup" element={renderSafeRoute("Signup Redirect", <Navigate to="/auth/signup" replace />)} />
       <Route path="/auth/*" element={renderSafeRoute("Auth", <AuthPages />)} />
       <Route
         path="/dashboard"
@@ -193,8 +187,6 @@ const AppContent = () => {
   const [globalRuntimeError, setGlobalRuntimeError] = useState<Error | null>(null);
 
   useEffect(() => {
-    console.log("App mounted");
-
     const handleWindowError = (event: ErrorEvent) => {
       const error = normalizeRuntimeError(event.error ?? event.message);
       console.error("[App] Unhandled window error", error);

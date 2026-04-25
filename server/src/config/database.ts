@@ -1,6 +1,6 @@
 import pkg from 'pg';
-import { config } from './index.js';
-import { log } from '../utils/logger.js';
+import { config } from './index';
+import { log } from '../utils/logger';
 
 const { Pool } = pkg;
 

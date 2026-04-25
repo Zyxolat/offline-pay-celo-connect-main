@@ -1,13 +1,13 @@
 import { Request, Response } from 'express';
-import { transactionService } from '../services/transactionService.js';
-import { ChallengeModel } from '../models/Challenge.js';
-import { celoService } from '../services/celoService.js';
-import { normalizeError } from '../utils/logger.js';
+import { transactionService } from '../services/transactionService';
+import { ChallengeModel } from '../models/Challenge';
+import { celoService } from '../services/celoService';
+import { normalizeError } from '../utils/logger';
 import {
   successResponse,
   errorResponse,
   validateWithSchema,
-} from '../utils/validators.js';
+} from '../utils/validators';
 import { randomBytes } from 'crypto';
 import { z } from 'zod';
 

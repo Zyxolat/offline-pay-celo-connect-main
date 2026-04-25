@@ -10,6 +10,8 @@ const withApiErrorLogging = async <T>(label: string, request: Promise<T>) => {
 };
 
 export const authAPI = {
+  register: (email: string, password: string) =>
+    withApiErrorLogging('register', api.post('/auth/register', { email, password })),
   adminLogin: (email: string, password: string) =>
     withApiErrorLogging('adminLogin', api.post('/auth/admin/login', { email, password })),
   login: (email: string, password: string) =>

@@ -1,16 +1,16 @@
 import type { PoolClient } from 'pg';
-import pool from '../config/database.js';
-import { getDatabaseStatus } from '../config/database.js';
+import pool from '../config/database';
+import { getDatabaseStatus } from '../config/database';
 import { ethers, type EventLog, type Log, type TransactionReceipt, type TransactionResponse } from 'ethers';
-import { config } from '../config/index.js';
-import { TIMELOCK_CONTRACT_ABI, type IndexedPaymentEventName, type TimeLockAbiVersion } from '../contracts/timeLock.js';
-import { ChainIndexerEventModel } from '../models/ChainIndexerEvent.js';
-import { ChainIndexerStateModel } from '../models/ChainIndexerState.js';
-import { UserModel } from '../models/User.js';
-import { transactionService } from './transactionService.js';
-import { celoService } from './celoService.js';
-import { getCurrentRpc, safeRpc } from '../lib/provider.js';
-import { log, normalizeError } from '../utils/logger.js';
+import { config } from '../config/index';
+import { TIMELOCK_CONTRACT_ABI, type IndexedPaymentEventName, type TimeLockAbiVersion } from '../contracts/timeLock';
+import { ChainIndexerEventModel } from '../models/ChainIndexerEvent';
+import { ChainIndexerStateModel } from '../models/ChainIndexerState';
+import { UserModel } from '../models/User';
+import { transactionService } from './transactionService';
+import { celoService } from './celoService';
+import { getCurrentRpc, safeRpc } from '../lib/provider';
+import { log, normalizeError } from '../utils/logger';
 
 type SupportedContractMethod = 'createPayment' | 'claimPayment' | 'acceptPayment';
 type VerifiedStatus = 'submitted' | 'pending' | 'confirmed' | 'failed';

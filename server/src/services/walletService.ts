@@ -1,11 +1,11 @@
 import { Decimal } from 'decimal.js';
 import qrcode from 'qrcode';
-import { UserModel } from '../models/User.js';
-import { TransactionModel } from '../models/Transaction.js';
-import { normalizeError } from '../utils/logger.js';
-import { celoService } from './celoService.js';
-import { contractIndexerService } from './contractIndexerService.js';
-import { transactionService } from './transactionService.js';
+import { UserModel } from '../models/User';
+import { TransactionModel } from '../models/Transaction';
+import { normalizeError } from '../utils/logger';
+import { celoService } from './celoService';
+import { contractIndexerService } from './contractIndexerService';
+import { transactionService } from './transactionService';
 
 const WITHDRAW_MINIMUMS = {
   CELO: new Decimal('0.001'),

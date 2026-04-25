@@ -7,7 +7,7 @@ export const AuthPages = () => {
     <Routes>
       <Route path="google/callback" element={<GoogleCallback />} />
       <Route path="login" element={<Login />} />
-      <Route path="signup" element={<Navigate to="/auth/login" replace />} />
+      <Route path="signup" element={<Login />} />
       <Route path="*" element={<Login />} />
     </Routes>
   );

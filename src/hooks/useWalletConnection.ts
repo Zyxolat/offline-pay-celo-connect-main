@@ -331,7 +331,7 @@ export const useWalletConnection = (timeoutMs = DEFAULT_TIMEOUT_MS) => {
     }
 
     return resolvedUrl;
-  }, [appKitState.connectingWallet, browser]);
+  }, [appKitState.connectingWallet]);
 
   const hint = useMemo(() => {
     if (browser.isMiniPay) {

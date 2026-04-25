@@ -8,21 +8,26 @@ import { type Request, type Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
 import { z } from 'zod';
-import { webauthnConfig } from '../config/webauthn.js';
-import { config } from '../config/index.js';
-import { AuthSessionModel } from '../models/AuthSession.js';
-import { OAuthProviderModel } from '../models/AuthModels.js';
-import { ChallengeModel, type WebAuthnChallenge } from '../models/Challenge.js';
-import { CredentialModel } from '../models/Credential.js';
-import { UserModel, type User } from '../models/User.js';
-import { tokenService } from '../services/tokenService.js';
-import { celoService } from '../services/celoService.js';
-import { log, normalizeError } from '../utils/logger.js';
-import { errorResponse, successResponse, validateWithSchema } from '../utils/validators.js';
+import { webauthnConfig } from '../config/webauthn';
+import { config } from '../config/index';
+import { AuthSessionModel } from '../models/AuthSession';
+import { OAuthProviderModel } from '../models/AuthModels';
+import { ChallengeModel, type WebAuthnChallenge } from '../models/Challenge';
+import { CredentialModel } from '../models/Credential';
+import { UserModel, type User } from '../models/User';
+import { tokenService } from '../services/tokenService';
+import { celoService } from '../services/celoService';
+import { log, normalizeError } from '../utils/logger';
+import { errorResponse, successResponse, validateWithSchema } from '../utils/validators';
 
 const adminLoginSchema = z.object({
   email: z.string().trim().email(),
   password: z.string().min(8),
+});
+
+const userPasswordSchema = z.object({
+  email: z.string().trim().email(),
+  password: z.string().min(8).max(72),
 });
 
 const webauthnEmailSchema = z.object({
@@ -56,18 +61,9 @@ const disabledAuthMessage = 'Unauthorized';
 const GOOGLE_STATE_TTL = '10m';
 const GOOGLE_CALLBACK_PATH = '/auth/google/callback';
 const GOOGLE_FRONTEND_CALLBACK_PATH = '/auth/google/callback';
+const PASSWORD_HASH_ROUNDS = 12;
 
-// Log Google OAuth configuration at startup for easier debugging
-if (config.google.enabled) {
-  log('INFO', 'Google OAuth configured', {
-    callbackUrl: config.google.callbackUrl,
-    clientIdConfigured: Boolean(config.google.clientId),
-  });
-} else {
-  log('WARN', 'Google OAuth is disabled (GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET not set)');
-}
-
-type SessionAuthMethod = 'admin' | 'passkey' | 'google';
+type SessionAuthMethod = 'admin' | 'passkey' | 'google' | 'password';
 
 type GoogleStatePayload = {
   purpose: 'google_oauth_state';
@@ -273,6 +269,101 @@ const getGoogleCallbackRedirectTo = (req: Request) => {
 };
 
 export const authController = {
+  async userRegister(req: Request, res: Response) {
+    try {
+      const payload = validateWithSchema(res, userPasswordSchema, req.body);
+      if (!payload) {
+        return;
+      }
+
+      const email = normalizeEmail(payload.email);
+      if (rejectAdminEmailFromUserFlow(res, email)) {
+        return;
+      }
+
+      const existingUser = await UserModel.findByEmail(email);
+      if (existingUser?.is_admin) {
+        return errorResponse(res, 'Admin account must use the admin login form.', 403);
+      }
+
+      if (existingUser?.password_hash) {
+        return errorResponse(res, 'An account with this email already has a password. Sign in instead.', 409);
+      }
+
+      const passwordHash = await bcrypt.hash(payload.password, PASSWORD_HASH_ROUNDS);
+      const user =
+        existingUser ??
+        (await UserModel.create(email, celoService.generateWalletAddress()));
+
+      const updatedUser = await UserModel.setPasswordHash(user.id, passwordHash);
+      await AuthSessionModel.revokeUserSessions(updatedUser.id);
+
+      logAuthEvent('INFO', 'User password account registered', res, {
+        userId: updatedUser.id,
+        email,
+        linkedGoogle: Boolean(updatedUser.google_id),
+        linkedPasskey: Boolean(updatedUser.passkey_id),
+      });
+
+      const session = await createSession(updatedUser, 'password');
+      successResponse(res, session, existingUser ? 200 : 201);
+    } catch (error) {
+      logAuthEvent('ERROR', 'User registration failed', res, {
+        error: normalizeError(error),
+      });
+      errorResponse(res, 'Failed to register account', 500);
+    }
+  },
+
+  async userLogin(req: Request, res: Response) {
+    try {
+      const payload = validateWithSchema(res, userPasswordSchema, req.body);
+      if (!payload) {
+        return;
+      }
+
+      const email = normalizeEmail(payload.email);
+      if (rejectAdminEmailFromUserFlow(res, email)) {
+        return;
+      }
+
+      const user = await UserModel.findByEmail(email);
+      if (!user || user.is_admin) {
+        return errorResponse(res, 'Invalid email or password.', 401);
+      }
+
+      if (!user.password_hash) {
+        return errorResponse(
+          res,
+          'This account does not have a password yet. Use passkey or Google sign-in, or create a password first.',
+          409,
+        );
+      }
+
+      const passwordMatches = await bcrypt.compare(payload.password, user.password_hash);
+      if (!passwordMatches) {
+        return errorResponse(res, 'Invalid email or password.', 401);
+      }
+
+      await AuthSessionModel.revokeUserSessions(user.id);
+      const session = await createSession(user, 'password');
+
+      logAuthEvent('INFO', 'User password login succeeded', res, {
+        userId: user.id,
+        email,
+        linkedGoogle: Boolean(user.google_id),
+        linkedPasskey: Boolean(user.passkey_id),
+      });
+
+      successResponse(res, session);
+    } catch (error) {
+      logAuthEvent('ERROR', 'User login failed', res, {
+        error: normalizeError(error),
+      });
+      errorResponse(res, 'Failed to log in', 500);
+    }
+  },
+
   async adminLogin(req: Request, res: Response) {
     try {
       const payload = validateWithSchema(res, adminLoginSchema, req.body);

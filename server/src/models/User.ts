@@ -1,10 +1,11 @@
-import pool from '../config/database.js';
+import pool from '../config/database';
 import { randomUUID } from 'crypto';
 
 export interface User {
   id: string;
   email: string;
   wallet_address: string;
+  password_hash?: string | null;
   google_id?: string | null;
   passkey_id?: string | null;
   is_admin?: boolean;
@@ -122,6 +123,14 @@ export const UserModel = {
     return result.rows[0];
   },
 
+  async setPasswordHash(userId: string, passwordHash: string): Promise<User> {
+    const result = await pool.query(
+      'UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2 RETURNING *',
+      [passwordHash, userId]
+    );
+    return result.rows[0];
+  },
+
   async update(id: string, updates: Partial<User>): Promise<User> {
     const now = new Date();
     const fields = [];
@@ -135,6 +144,10 @@ export const UserModel = {
     if (updates.wallet_address !== undefined) {
       fields.push(`wallet_address = $${paramCount++}`);
       values.push(updates.wallet_address);
+    }
+    if (updates.password_hash !== undefined) {
+      fields.push(`password_hash = $${paramCount++}`);
+      values.push(updates.password_hash);
     }
     if (updates.google_id !== undefined) {
       fields.push(`google_id = $${paramCount++}`);

@@ -1,9 +1,9 @@
 import { Request, Response, Router } from 'express';
 import type { PoolClient } from 'pg';
-import pool from '../config/database.js';
-import { requireAdminAuth } from '../middleware/auth.js';
-import { transactionService } from '../services/transactionService.js';
-import { normalizeError } from '../utils/logger.js';
+import pool from '../config/database';
+import { requireAdminAuth } from '../middleware/auth';
+import { transactionService } from '../services/transactionService';
+import { normalizeError } from '../utils/logger';
 
 const router = Router();
 

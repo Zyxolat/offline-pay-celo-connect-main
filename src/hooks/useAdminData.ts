@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { adminAPI } from '@/services/adminClient';
 
 export const useAdminData = (
@@ -10,7 +10,7 @@ export const useAdminData = (
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadData = async (page = 1, limit = 50) => {
+  const loadData = useCallback(async (page = 1, limit = 50) => {
     if (!enabled) {
       setData([]);
       setPagination(null);
@@ -41,7 +41,7 @@ export const useAdminData = (
     } finally {
       setLoading(false);
     }
-  };
+  }, [enabled, endpoint]);
 
   useEffect(() => {
     if (!enabled) {
@@ -59,7 +59,7 @@ export const useAdminData = (
     }, 5000);
 
     return () => window.clearInterval(intervalId);
-  }, [enabled, endpoint, pagination?.limit, pagination?.page]);
+  }, [enabled, loadData, pagination?.limit, pagination?.page]);
 
   return { data, pagination, loading, error, loadData };
 };

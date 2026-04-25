@@ -4,7 +4,7 @@ type AuthenticatedRequestUser = {
   userId: string;
   email: string;
   role: 'admin' | 'user';
-  authMethod: 'google' | 'passkey' | 'admin';
+  authMethod: 'google' | 'passkey' | 'password' | 'admin';
   isAdmin: boolean;
 };
 

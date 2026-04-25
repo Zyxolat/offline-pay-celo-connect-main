@@ -1,9 +1,9 @@
 import type { PoolClient } from 'pg';
-import { TransactionModel } from '../models/Transaction.js';
-import { UserModel } from '../models/User.js';
-import { celoService } from './celoService.js';
-import { normalizeError } from '../utils/logger.js';
-import type { TransactionStatus } from '../models/Transaction.js';
+import { TransactionModel } from '../models/Transaction';
+import { UserModel } from '../models/User';
+import { celoService } from './celoService';
+import { normalizeError } from '../utils/logger';
+import type { TransactionStatus } from '../models/Transaction';
 
 export const transactionService = {
   async createPayment(

@@ -1,7 +1,7 @@
-import { OfflineQueueModel } from '../models/OfflineQueue.js';
-import { TransactionModel } from '../models/Transaction.js';
-import { celoService } from './celoService.js';
-import { normalizeError } from '../utils/logger.js';
+import { OfflineQueueModel } from '../models/OfflineQueue';
+import { TransactionModel } from '../models/Transaction';
+import { celoService } from './celoService';
+import { normalizeError } from '../utils/logger';
 
 export const queueService = {
   async addToQueue(userId: string, signedTx: string, transactionId?: string): Promise<any> {

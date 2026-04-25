@@ -88,11 +88,11 @@ export const resolveManualWalletOpenUrl = (
   let resolvedDeepLink = deepLink;
   const returnUrl = appBaseUrl || currentUrl;
 
-  if (walletConnectUri && /(?:\{|\%7B)(?:\{)?uri(?:\})?(?:\})?/i.test(resolvedDeepLink)) {
+  if (walletConnectUri && /(?:\{|%7B)(?:\{)?uri(?:\})?(?:\})?/i.test(resolvedDeepLink)) {
     resolvedDeepLink = withEncodedValue(resolvedDeepLink, 'uri', walletConnectUri);
   }
 
-  if (/(?:\{|\%7B)(?:\{)?url(?:\})?(?:\})?/i.test(resolvedDeepLink)) {
+  if (/(?:\{|%7B)(?:\{)?url(?:\})?(?:\})?/i.test(resolvedDeepLink)) {
     resolvedDeepLink = withEncodedValue(resolvedDeepLink, 'url', returnUrl);
   }
 

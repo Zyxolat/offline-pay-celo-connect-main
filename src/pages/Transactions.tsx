@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ArrowLeft, Copy, Loader2 } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 
@@ -126,11 +126,7 @@ export const TransactionDetailPage = () => {
   const [transaction, setTransaction] = useState<any>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    void loadDetail();
-  }, [txId]);
-
-  const loadDetail = async () => {
+  const loadDetail = useCallback(async () => {
     if (!txId) {
       setLoading(false);
       return;
@@ -145,7 +141,11 @@ export const TransactionDetailPage = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [txId]);
+
+  useEffect(() => {
+    void loadDetail();
+  }, [loadDetail]);
 
   const handleCopy = async (text?: string) => {
     if (!text) {
