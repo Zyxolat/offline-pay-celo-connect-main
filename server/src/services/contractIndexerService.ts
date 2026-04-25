@@ -12,7 +12,7 @@ import { celoService } from './celoService';
 import { getCurrentRpc, safeRpc } from '../lib/provider';
 import { log, normalizeError } from '../utils/logger';
 
-type SupportedContractMethod = 'createPayment' | 'claimPayment' | 'acceptPayment' | 'refundPayment' | 'cancelPayment';
+type SupportedContractMethod = 'createPayment' | 'claimPayment' | 'acceptPayment';
 type VerifiedStatus = 'submitted' | 'pending' | 'confirmed' | 'failed';
 type IndexerMode = 'websocket' | 'http-polling';
 type IndexerAlertLevel = 'warn' | 'error';
@@ -87,7 +87,7 @@ const INTEGRITY_INTERVAL_MS = Math.max(30_000, config.celo.eventIndexerIntegrity
 const INTEGRITY_SAMPLE_SIZE = Math.max(1, config.celo.eventIndexerIntegritySampleSize || 5);
 const INTEGRITY_LOOKBACK_BLOCKS = Math.max(1, config.celo.eventIndexerIntegrityLookbackBlocks || 250);
 const MAX_BLOCK_RANGE = 10;
-const INDEXED_EVENTS: IndexedPaymentEventName[] = ['PaymentCreated', 'PaymentClaimed', 'PaymentRefunded'];
+const INDEXED_EVENTS: IndexedPaymentEventName[] = ['PaymentCreated', 'PaymentClaimed'];
 const normalizeAddress = (address: string) => ethers.getAddress(address);
 const indexedContracts = celoService.getIndexedContracts();
 const contractInterfaceByAddress = new Map(
@@ -199,12 +199,7 @@ const buildVerifiedTransactionFromInput = async (
     const paymentData = await resolveRecipientAndAmountFromPayment(paymentId, contractAddress, abiVersion);
     recipient = paymentData.recipient;
     amount = paymentData.amount;
-
-    if (methodName === 'claimPayment' || methodName === 'acceptPayment') {
-      note = `Contract payment #${paymentId} claimed`;
-    } else {
-      note = `Contract payment #${paymentId} refunded`;
-    }
+    note = `Contract payment #${paymentId} claimed`;
   }
 
   if (!receipt) {
@@ -276,17 +271,7 @@ const buildVerifiedTransactionFromEvent = async (
     };
   }
 
-  return {
-    txHash,
-    actorAddress: normalizeAddress(String(eventData.args.sender)),
-    recipient: normalizeAddress(String(eventData.args.sender)),
-    amount: ethers.formatEther(eventData.args.amount),
-    status: receipt?.status === 0 ? 'failed' : 'confirmed',
-    confirmations,
-    note: `Contract payment #${String(eventData.args.paymentId)} refunded`,
-    contractAddress,
-    abiVersion,
-  };
+  return null;
 };
 
 async function persistVerifiedTransaction(verifiedTransaction: VerifiedTransaction, client?: PoolClient) {
@@ -585,7 +570,6 @@ export const contractIndexerService = {
       const topics = [
         contractEntry.interface.getEvent('PaymentCreated')!.topicHash,
         contractEntry.interface.getEvent('PaymentClaimed')!.topicHash,
-        contractEntry.interface.getEvent('PaymentRefunded')!.topicHash,
       ];
 
       let logs: Log[] = [];

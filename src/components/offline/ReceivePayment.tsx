@@ -152,15 +152,13 @@ export const ReceivePayment = () => {
           </div>
         ) : (
           incomingPayments.map((payment) => {
-            const claimableNow = isPaymentClaimable(currentTime, payment.releaseTime);
-            const canShowClaim = payment.isRecipient && !payment.claimed && !payment.refunded && claimableNow;
+            const claimableNow = isPaymentClaimable(currentTime, payment.unlockTime);
+            const canShowClaim = payment.isRecipient && !payment.claimed && claimableNow;
             const statusLabel = payment.claimed
               ? "Claimed"
-              : payment.refunded
-                ? "Refunded"
-                : claimableNow
-                  ? "Ready to claim"
-                  : "Pending";
+              : claimableNow
+                ? "Ready to claim"
+                : "Locked";
 
             return (
               <div key={payment.id} className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
@@ -173,8 +171,8 @@ export const ReceivePayment = () => {
                 </div>
 
                 <div className="mt-3 space-y-1 text-sm text-slate-600">
-                  <p>Release time: {new Date(payment.releaseTime * 1000).toLocaleString()}</p>
-                  <p>Countdown: {claimableNow ? "Ready to claim" : formatCountdown(payment.releaseTime)}</p>
+                  <p>Unlock time (UTC): {new Date(payment.unlockTime * 1000).toUTCString()}</p>
+                  <p>Countdown: {claimableNow ? "Ready to claim" : formatCountdown(payment.unlockTime)}</p>
                   <p>Sender: {payment.sender}</p>
                   <p>Recipient: {payment.recipient}</p>
                 </div>
@@ -198,7 +196,7 @@ export const ReceivePayment = () => {
       </div>
 
       <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600">
-        Recipients can claim funds as soon as the release time passes and the intended wallet is connected on Celo Mainnet.
+        Recipients can claim funds only after the sender-set unlock time (UTC) has passed and the intended wallet is connected on Celo Mainnet.
       </div>
     </Card>
   );

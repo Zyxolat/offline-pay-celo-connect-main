@@ -5,7 +5,6 @@ import {
   getConnectedWalletAddress,
   getPaymentsForAddress,
   getWalletBalance,
-  refundPayment,
   subscribeToPaymentEvents,
   subscribeToWalletEvents,
   type TimeLockPaymentView,
@@ -181,31 +180,6 @@ export const useTimeLockPayments = () => {
     [refresh],
   );
 
-  const handleRefundPayment = useCallback(
-    async (paymentId: number) => {
-      setActingOnPaymentId(paymentId);
-
-      try {
-        const result = await refundPayment(paymentId);
-        setLastTransactionHash(result.hash);
-        setError("");
-        await refresh();
-        window.setTimeout(() => {
-          void refresh(undefined, { silent: true });
-        }, 2000);
-        return result;
-      } catch (refundError) {
-        const message = refundError instanceof Error ? refundError.message : "Unable to refund this payment.";
-        setError(message);
-        await refresh();
-        throw new Error(message);
-      } finally {
-        setActingOnPaymentId(null);
-      }
-    },
-    [refresh],
-  );
-
   return {
     account: address,
     payments,
@@ -228,6 +202,5 @@ export const useTimeLockPayments = () => {
     connectWallet: handleConnectWallet,
     refresh,
     acceptPayment: handleAcceptPayment,
-    refundPayment: handleRefundPayment,
   };
 };

@@ -24,7 +24,6 @@ export const OfflinePaymentDemo = () => {
     canOpenWalletManually,
     refresh,
     acceptPayment,
-    refundPayment,
     error,
     connecting,
     actingOnPaymentId,
@@ -74,16 +73,6 @@ export const OfflinePaymentDemo = () => {
     }
   };
 
-  const handleRefundTransaction = async (id: number) => {
-    const loadingToastId = toast.loading("Refund transaction pending...");
-    try {
-      await refundPayment(id);
-      toast.success("Refund sent back to the sender.", { id: loadingToastId });
-    } catch (refundError) {
-      toast.error(refundError instanceof Error ? refundError.message : "Unable to refund payment.", { id: loadingToastId });
-    }
-  };
-
   const connectLabel = connecting
     ? "Connecting..."
     : account
@@ -125,7 +114,7 @@ export const OfflinePaymentDemo = () => {
             </div>
 
             <p className="offlinepay-auth-card__copy">
-              Connect the wallet that should create, accept, or refund payments using the deployed OfflinePay contract on Celo Mainnet.
+              Connect the wallet that should create or claim payments using the deployed OfflinePay contract on Celo Mainnet.
             </p>
 
             <Button onClick={handleConnectWallet} variant={account ? "secondary" : "default"} className="w-full">
@@ -189,7 +178,6 @@ export const OfflinePaymentDemo = () => {
               currentTime={currentTime}
               transaction={selectedTransaction}
               onAccept={handleAcceptTransaction}
-              onRefund={handleRefundTransaction}
               actionLoadingId={actingOnPaymentId}
               lastTransactionHash={lastTransactionHash}
             />

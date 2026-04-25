@@ -230,7 +230,7 @@ export const PaymentForm = ({ disabled = false, onSubmit }: PaymentFormProps) =>
         </div>
         <p className="mt-2">Locked amount: {amount || "0"} CELO</p>
         <p className="mt-1">Recipient: {recipient || "Waiting for recipient address"}</p>
-        <p className="mt-1">Release time: {unlockAt ? unlockAt.toLocaleString() : "Set a valid lock duration"}</p>
+        <p className="mt-1">Unlock time (UTC): {unlockAt ? unlockAt.toUTCString() : "Set a valid lock duration"}</p>
         <p className="mt-3 flex items-center gap-2 text-slate-600">
           {estimatingGas ? <Loader2 size={14} className="animate-spin" /> : null}
           Estimated gas fee: {gasEstimate ? `${gasEstimate} CELO` : "Connect wallet and complete the form to estimate"}

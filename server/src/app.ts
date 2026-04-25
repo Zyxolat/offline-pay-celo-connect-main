@@ -161,6 +161,26 @@ app.use(cors({
     return callback(new Error(`Origin ${origin} is not allowed by CORS`));
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
+  optionsSuccessStatus: 200,
+}));
+
+// Handle OPTIONS preflight for all routes
+app.options('*', cors({
+  origin(origin, callback) {
+    if (!origin) return callback(null, true);
+    const isConfiguredOrigin = allowedOrigins.has(origin.replace(/\/+$/, ''));
+    const isLocalDevOrigin =
+      config.nodeEnv !== 'production' && localhostOriginPattern.test(origin);
+    if (isConfiguredOrigin || isLocalDevOrigin) {
+      return callback(null, true);
+    }
+    return callback(new Error(`Origin ${origin} is not allowed by CORS`));
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'x-request-id'],
   optionsSuccessStatus: 200,
 }));
 
@@ -266,6 +286,9 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
 });
 
 // Routes
+// Auth routes are mounted at both /auth and /api/auth.
+// Google OAuth callback URL (GOOGLE_CALLBACK_URL env var) must point to
+// <backend-url>/auth/google/callback or <backend-url>/api/auth/google/callback.
 app.use('/auth', authRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/wallet', walletRoutes);
