@@ -1,5 +1,5 @@
-import pool from '../config/database.js';
-import { config } from '../config/index.js';
+import pool from '../config/database';
+import { config } from '../config/index';
 
 const migrationStatements = [
   `CREATE EXTENSION IF NOT EXISTS "pgcrypto";`,
@@ -8,18 +8,19 @@ const migrationStatements = [
       id UUID PRIMARY KEY,
       email VARCHAR(255) UNIQUE NOT NULL,
       wallet_address VARCHAR(255) UNIQUE NOT NULL,
+      password_hash VARCHAR(255),
       google_id VARCHAR(255) UNIQUE,
       passkey_id VARCHAR(1000),
       is_admin BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMP NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS passkey_id VARCHAR(1000);
     ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT NOW();
     ALTER TABLE users ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT NOW();
-    ALTER TABLE users DROP COLUMN IF EXISTS password_hash;
   `,
   `
     CREATE TABLE IF NOT EXISTS wallets (

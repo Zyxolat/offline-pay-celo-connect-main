@@ -1,12 +1,13 @@
 import { Router } from 'express';
-import { authController } from '../controllers/authController.js';
-import { authLimiter } from '../middleware/rateLimiter.js';
+import { authController } from '../controllers/authController';
+import { authLimiter } from '../middleware/rateLimiter';
 
 const router = Router();
 
 router.get('/google', authLimiter, authController.googleStart);
 router.get('/google/callback', authLimiter, authController.googleCallback);
-router.post('/login', authLimiter, authController.adminLogin);
+router.post('/register', authLimiter, authController.userRegister);
+router.post('/login', authLimiter, authController.userLogin);
 router.post('/admin/login', authLimiter, authController.adminLogin);
 router.post('/webauthn/register/options', authLimiter, authController.registerOptions);
 router.post('/webauthn/register/verify', authLimiter, authController.registerVerify);

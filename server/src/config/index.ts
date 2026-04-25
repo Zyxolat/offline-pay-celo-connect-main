@@ -1,12 +1,14 @@
 import dotenv from 'dotenv';
 import path from 'path';
-import { log } from '../utils/logger.js';
+import { log } from '../utils/logger';
 
 const serverRoot = path.join(__dirname, '../..');
 const workspaceRoot = path.join(serverRoot, '..');
 
+// Respect deployment-provided environment variables first, then fill gaps from
+// local files. The server-specific file wins over the workspace root file.
+dotenv.config({ path: path.join(serverRoot, '.env') });
 dotenv.config({ path: path.join(workspaceRoot, '.env') });
-dotenv.config({ path: path.join(serverRoot, '.env'), override: true });
 
 type DatabaseConfig = {
   url?: string;
@@ -189,9 +191,21 @@ function parseAbsoluteUrl(name: string, value: string, options: { requireHttpsIn
   return parsed;
 }
 
+function parseHttpsUrl(name: string, value: string) {
+  const parsed = parseAbsoluteUrl(name, value, { requireHttpsInProduction: true });
+
+  if (!/^https?:$/i.test(parsed.protocol)) {
+    return failConfig(`${name} must use http:// or https://`, {
+      value,
+    });
+  }
+
+  return parsed;
+}
+
 function getFrontendOrigins() {
   const frontendUrl = requireEnv('FRONTEND_URL', {
-    allowInDevFallback: 'http://localhost:5173',
+    allowInDevFallback: 'http://localhost:8081',
   });
   const parsedOrigins = frontendUrl
     .split(',')
@@ -356,9 +370,10 @@ const googleCallbackUrl = parseAbsoluteUrl('GOOGLE_CALLBACK_URL', googleCallback
   requireHttpsInProduction: true,
 });
 
+const hasCompleteGoogleConfig = Boolean(googleClientId && googleClientSecret);
 if (Boolean(googleClientId) !== Boolean(googleClientSecret)) {
-  failConfig(
-    'Google OAuth requires both GOOGLE_CLIENT_ID (or VITE_GOOGLE_CLIENT_ID) and GOOGLE_CLIENT_SECRET to be set together.',
+  warnConfig(
+    'Google OAuth is partially configured. Set both GOOGLE_CLIENT_ID (or VITE_GOOGLE_CLIENT_ID) and GOOGLE_CLIENT_SECRET to enable Google sign-in.',
     {
       hasClientId: Boolean(googleClientId),
       hasClientSecret: Boolean(googleClientSecret),
@@ -380,11 +395,15 @@ const port = isProduction()
 const databaseConfig = getDatabaseConfig();
 
 const celoRpcUrl = requireEnv('CELO_RPC_URL');
+const parsedCeloRpcUrl = parseHttpsUrl('CELO_RPC_URL', celoRpcUrl);
 
-if (!/^https:\/\/celo-mainnet\.g\.alchemy\.com\/v2\/[^/]+$/i.test(celoRpcUrl)) {
-  failConfig('CELO_RPC_URL must be a Celo Mainnet Alchemy URL', {
-    value: celoRpcUrl,
-  });
+if (isProduction() && /(^|\.)forno\.celo\.org$/i.test(parsedCeloRpcUrl.hostname)) {
+  warnConfig(
+    'CELO_RPC_URL is using the public Forno endpoint in production. This can be rate-limited and should be replaced with a dedicated provider.',
+    {
+      hostname: parsedCeloRpcUrl.hostname,
+    },
+  );
 }
 
 const celoNetwork = (process.env.CELO_NETWORK || 'mainnet').trim().toLowerCase();
@@ -432,7 +451,7 @@ export const config = {
   },
 
   google: {
-    enabled: Boolean(googleClientId && googleClientSecret),
+    enabled: hasCompleteGoogleConfig,
     clientId: googleClientId,
     clientSecret: googleClientSecret,
     callbackUrl: googleCallbackUrl.toString(),

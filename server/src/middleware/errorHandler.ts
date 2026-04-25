@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { normalizeError } from '../utils/logger.js';
+import { normalizeError } from '../utils/logger';
 
 export interface ApiError extends Error {
   status?: number;

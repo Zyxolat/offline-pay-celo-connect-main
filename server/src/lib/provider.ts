@@ -1,20 +1,14 @@
 import { JsonRpcProvider } from 'ethers';
+import { config } from '../config/index';
 
 const CELO_MAINNET_CHAIN_ID = 42220n;
 const RPC_TIMEOUT_MS = 6_000;
-const ALCHEMY_MAINNET_RPC_PATTERN = /^https:\/\/celo-mainnet\.g\.alchemy\.com\/v2\/[^/]+$/i;
-
-if (!process.env.CELO_RPC_URL) throw new Error('Missing CELO_RPC_URL');
 
 const RPC_URLS = [
-  process.env.CELO_RPC_URL.trim(),
+  config.celo.rpcUrl.trim(),
   'https://forno.celo.org',
   'https://rpc.ankr.com/celo',
 ].filter((url, index, values): url is string => Boolean(url) && values.indexOf(url) === index);
-
-if (!ALCHEMY_MAINNET_RPC_PATTERN.test(RPC_URLS[0] ?? '')) {
-  throw new Error('CELO_RPC_URL must point to https://celo-mainnet.g.alchemy.com/v2/<key>');
-}
 
 type ProviderState = {
   url: string;

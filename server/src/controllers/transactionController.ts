@@ -1,8 +1,8 @@
 import { Request, Response } from 'express';
-import { TransactionModel } from '../models/Transaction.js';
-import { UserModel } from '../models/User.js';
-import { normalizeError } from '../utils/logger.js';
-import { successResponse, errorResponse, validateWithSchema } from '../utils/validators.js';
+import { TransactionModel } from '../models/Transaction';
+import { UserModel } from '../models/User';
+import { normalizeError } from '../utils/logger';
+import { successResponse, errorResponse, validateWithSchema } from '../utils/validators';
 import { z } from 'zod';
 
 const transactionDetailParamsSchema = z.object({

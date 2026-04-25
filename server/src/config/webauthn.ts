@@ -5,7 +5,7 @@ import {
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
 } from '@simplewebauthn/server';
-import { config } from './index.js';
+import { config } from './index';
 
 export const webauthnConfig = {
   generateRegistrationOptions: async (

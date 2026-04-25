@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
-import { queueService } from '../services/queueService.js';
-import { normalizeError } from '../utils/logger.js';
-import { successResponse, errorResponse, validateWithSchema } from '../utils/validators.js';
+import { queueService } from '../services/queueService';
+import { normalizeError } from '../utils/logger';
+import { successResponse, errorResponse, validateWithSchema } from '../utils/validators';
 import { z } from 'zod';
 
 const addToQueueSchema = z.object({

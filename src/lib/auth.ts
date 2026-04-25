@@ -6,7 +6,7 @@ export interface SessionUser {
   role: AppRole;
   isAdmin?: boolean;
   walletAddress?: string;
-  authMethod?: 'google' | 'passkey' | 'admin';
+  authMethod?: 'google' | 'passkey' | 'password' | 'admin';
 }
 
 type BrowserStorageMode = 'local' | 'session';

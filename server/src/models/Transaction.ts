@@ -1,7 +1,7 @@
 import type { PoolClient } from 'pg';
-import pool from '../config/database.js';
+import pool from '../config/database';
 import { randomUUID } from 'crypto';
-import { TransactionHistoryModel } from './TransactionHistory.js';
+import { TransactionHistoryModel } from './TransactionHistory';
 
 export type TransactionStatus = 'draft' | 'pending_sync' | 'submitted' | 'pending' | 'confirmed' | 'failed';
 export type TransactionType = 'send' | 'receive';

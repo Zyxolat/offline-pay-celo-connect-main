@@ -1,5 +1,5 @@
 import type { PoolClient } from 'pg';
-import pool from '../config/database.js';
+import pool from '../config/database';
 
 export interface ChainIndexerEventRecord {
   id: string;

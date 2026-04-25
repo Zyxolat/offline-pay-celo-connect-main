@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { adminAPI } from '@/services/adminClient';
 
 export const useAdminStats = (enabled = true) => {
@@ -6,7 +6,7 @@ export const useAdminStats = (enabled = true) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  const loadStats = async () => {
+  const loadStats = useCallback(async () => {
     if (!enabled) {
       setStats(null);
       setError(null);
@@ -28,7 +28,7 @@ export const useAdminStats = (enabled = true) => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [enabled]);
 
   useEffect(() => {
     if (!enabled) {
@@ -45,7 +45,7 @@ export const useAdminStats = (enabled = true) => {
     }, 5000);
 
     return () => window.clearInterval(intervalId);
-  }, [enabled]);
+  }, [enabled, loadStats]);
 
   return { stats, loading, error, refresh: loadStats };
 };

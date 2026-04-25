@@ -3,7 +3,7 @@ import { CheckCircle2, Loader2, RefreshCcw, Wallet } from "lucide-react";
 
 import ClaimSection from "@/components/ClaimSection";
 import PaymentCard from "@/components/PaymentCard";
-import PaymentForm from "@/components/PaymentForm";
+import PaymentForm from "@/components/payments/PaymentForm";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/sonner";

@@ -1,7 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
-import { config } from '../config/index.js';
-import { AuthSessionModel } from '../models/AuthSession.js';
-import { tokenService } from '../services/tokenService.js';
+import { config } from '../config/index';
+import { AuthSessionModel } from '../models/AuthSession';
+import { tokenService } from '../services/tokenService';
 
 const normalizeIp = (value?: string | null) => value?.replace(/^::ffff:/, '') ?? '';
 

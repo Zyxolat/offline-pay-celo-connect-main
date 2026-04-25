@@ -1,8 +1,8 @@
 import { ethers, type Log, type TransactionReceipt, type TransactionResponse } from 'ethers';
-import { config } from '../config/index.js';
-import { TIMELOCK_ABI_REGISTRY, TIMELOCK_CONTRACT_ABI, type TimeLockAbiVersion } from '../contracts/timeLock.js';
-import { getCurrentRpc, getProvider, safeRpc } from '../lib/provider.js';
-import { normalizeError } from '../utils/logger.js';
+import { config } from '../config/index';
+import { TIMELOCK_ABI_REGISTRY, TIMELOCK_CONTRACT_ABI, type TimeLockAbiVersion } from '../contracts/timeLock';
+import { getCurrentRpc, getProvider, safeRpc } from '../lib/provider';
+import { normalizeError } from '../utils/logger';
 
 const timeLockInterface = new ethers.Interface(TIMELOCK_CONTRACT_ABI);
 const timeLockContracts = config.celo.timeLockContracts.map((contractConfig) => ({

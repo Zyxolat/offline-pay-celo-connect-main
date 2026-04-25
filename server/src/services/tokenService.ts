@@ -1,12 +1,12 @@
 import jwt from 'jsonwebtoken';
-import { config } from '../config/index.js';
-import { normalizeError } from '../utils/logger.js';
+import { config } from '../config/index';
+import { normalizeError } from '../utils/logger';
 
 export interface TokenPayload {
   userId: string;
   email: string;
   role: 'admin' | 'user';
-  authMethod: 'google' | 'passkey' | 'admin';
+  authMethod: 'google' | 'passkey' | 'password' | 'admin';
   iat?: number;
   exp?: number;
 }

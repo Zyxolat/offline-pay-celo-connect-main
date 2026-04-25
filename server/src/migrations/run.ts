@@ -1,6 +1,6 @@
-import { verifyDatabaseConnection } from '../config/database.js';
-import { createAdvancedAuthTables } from '../models/AdvancedAuthMigration.js';
-import { log, serializeError } from '../utils/logger.js';
+import { verifyDatabaseConnection } from '../config/database';
+import { createAdvancedAuthTables } from '../models/AdvancedAuthMigration';
+import { log, serializeError } from '../utils/logger';
 
 async function runMigrations() {
   try {

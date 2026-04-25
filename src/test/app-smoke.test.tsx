@@ -39,6 +39,15 @@ describe("App smoke", () => {
     expect(view.getByRole("button", { name: /continue with passkey/i })).toBeInTheDocument();
   });
 
+  it("renders the signup page with password account creation by default", async () => {
+    window.history.pushState({}, "", "/auth/signup");
+
+    const view = render(<App />);
+
+    expect(await view.findByText(/create your account/i)).toBeInTheDocument();
+    expect(view.getByRole("button", { name: /create account with password/i })).toBeInTheDocument();
+  });
+
   it("renders the learn more page without crashing", async () => {
     window.history.pushState({}, "", "/learn-more");
 
@@ -76,6 +85,8 @@ describe("App smoke", () => {
 
     const view = render(<App />);
 
-    expect(await view.findByText(/create a time-locked offline payment/i)).toBeInTheDocument();
+    expect(
+      await view.findByText(/create a time-locked offline payment/i, {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
   });
 });

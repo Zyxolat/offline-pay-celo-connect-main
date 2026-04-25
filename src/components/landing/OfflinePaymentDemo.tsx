@@ -3,7 +3,7 @@ import { CheckCircle2, ShieldCheck, Wallet, WifiOff } from "lucide-react";
 
 import ClaimSection from "@/components/ClaimSection";
 import PaymentCard from "@/components/PaymentCard";
-import PaymentForm from "@/components/PaymentForm";
+import PaymentForm from "@/components/payments/PaymentForm";
 import WhyOfflinePay from "@/components/WhyOfflinePay";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/sonner";
