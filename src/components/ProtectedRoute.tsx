@@ -12,7 +12,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null);
 
   useEffect(() => {
-    setIsAuthenticated(hasStoredSession());
+    setIsAuthenticated(hasStoredSession('user'));
   }, []);
 
   if (isAuthenticated === null) {
@@ -27,7 +27,7 @@ export const ProtectedRoute = ({ children }: ProtectedRouteProps) => {
     return <Navigate to="/auth/login" replace />;
   }
 
-  if (!getStoredToken() || !getStoredUser()) {
+  if (!getStoredToken('user') || !getStoredUser('user')) {
     return <Navigate to="/auth/login" replace state={{ from: location }} />;
   }
 

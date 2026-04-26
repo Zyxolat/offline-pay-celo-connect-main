@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { queueController } from '../controllers/queueController';
-import { authMiddleware } from '../middleware/auth';
+import { requireUserAuth } from '../middleware/auth';
 
 const router = Router();
 
-router.use(authMiddleware);
+router.use(requireUserAuth);
 
 router.post('/add', queueController.addToQueue);
 router.get('/pending', queueController.getPending);

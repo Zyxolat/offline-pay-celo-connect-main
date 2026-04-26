@@ -70,6 +70,29 @@ export const authMiddleware = async (req: Request, res: Response, next: NextFunc
   next();
 };
 
+export const requireUserAuth = async (req: Request, res: Response, next: NextFunction) => {
+  const authenticated = await authenticateRequest(req, res);
+  if (!authenticated) {
+    return;
+  }
+
+  const { payload, session } = authenticated;
+
+  if (payload.role !== 'user' || session.is_admin) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  req.user = {
+    userId: payload.userId,
+    email: payload.email,
+    role: 'user',
+    authMethod: payload.authMethod,
+    isAdmin: false,
+  };
+
+  next();
+};
+
 export const requireAdminAuth = async (req: Request, res: Response, next: NextFunction) => {
   const authenticated = await authenticateRequest(req, res);
   if (!authenticated) {

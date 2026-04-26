@@ -47,7 +47,7 @@ export const AdminDashboard = () => {
 
   const handleLogout = () => {
     void authAPI.logout().catch(() => undefined);
-    clearSession();
+    clearSession('admin');
     setIsAdminAuthed(false);
   };
 

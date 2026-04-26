@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { transactionController } from '../controllers/transactionController';
-import { authMiddleware } from '../middleware/auth';
+import { requireUserAuth } from '../middleware/auth';
 
 const router = Router();
 
-router.use(authMiddleware);
+router.use(requireUserAuth);
 
 router.get('/status/batch', transactionController.getStatusBatch);
 router.get('/:txId', transactionController.getDetail);

@@ -161,7 +161,7 @@ export const Dashboard = () => {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
 
-    setUser(getStoredUser());
+    setUser(getStoredUser('user'));
 
     return () => {
       window.removeEventListener('online', handleOnline);
@@ -197,7 +197,7 @@ export const Dashboard = () => {
 
   const handleLogout = async () => {
     await authAPI.logout();
-    clearSession();
+    clearSession('user');
     navigate('/auth/login');
   };
 

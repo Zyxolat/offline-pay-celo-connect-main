@@ -1,4 +1,4 @@
-import { clearSession, getStoredToken } from '@/lib/auth';
+import { clearSession, getStoredToken, type SessionScope } from '@/lib/auth';
 import { getApiBaseUrl } from '@/config/env';
 import axios from 'axios';
 
@@ -9,8 +9,23 @@ const api = axios.create({
   timeout: 30000,
 });
 
+const getRequestSessionScope = (requestUrl: string, pathname: string): SessionScope => {
+  if (requestUrl.includes('/admin/')) {
+    return 'admin';
+  }
+
+  if (requestUrl.includes('/auth/logout')) {
+    return pathname.startsWith('/admin') ? 'admin' : 'user';
+  }
+
+  return 'user';
+};
+
 api.interceptors.request.use((config) => {
-  const token = getStoredToken();
+  const pathname = typeof window !== 'undefined' ? window.location.pathname : '/';
+  const requestUrl = String(config.url || '');
+  const token = getStoredToken(getRequestSessionScope(requestUrl, pathname));
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
@@ -22,6 +37,8 @@ api.interceptors.response.use(
   (error) => {
     const requestUrl = String(error.config?.url || '');
     const isAuthEndpoint = /\/auth(\/|$)/.test(requestUrl);
+    const path = typeof window !== 'undefined' ? window.location.pathname : '/';
+    const requestScope = getRequestSessionScope(requestUrl, path);
 
     if (typeof error.response?.data?.error === 'string' && !error.message) {
       error.message = error.response.data.error;
@@ -32,12 +49,11 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 401) {
-      const path = window.location.pathname;
       const isAdminRoute = path.startsWith('/admin');
       const isAdminApi = requestUrl.includes('/admin/');
 
       if (!isAuthEndpoint) {
-        clearSession();
+        clearSession(requestScope);
       }
 
       if ((isAdminRoute || isAdminApi) && !isAuthEndpoint) {
@@ -48,12 +64,11 @@ api.interceptors.response.use(
     }
 
     if (error.response?.status === 403) {
-      const path = window.location.pathname;
       const isAdminRoute = path.startsWith('/admin');
       const isAdminApi = String(error.config?.url || '').includes('/admin/');
 
       if (isAdminRoute || isAdminApi) {
-        clearSession();
+        clearSession('admin');
         window.location.href = '/auth/login';
       }
     }
