@@ -270,16 +270,27 @@ app.use('/api', (req: Request, res: Response, next: NextFunction) => {
   const database = getDatabaseStatus();
 
   if (!database.isReady) {
-    res.setHeader('x-service-state', 'warming-up');
-    return res.status(503).json({
-      success: false,
-      error: 'Database is warming up. Try again shortly.',
-      db: {
-        phase: database.phase,
-        isConnecting: database.isConnecting,
-        attempts: database.attempts,
-      },
-    });
+    // Google OAuth start and callback are pure redirects that do not require
+    // a database connection. Allow them through so the OAuth flow is not
+    // blocked during the brief DB warm-up window at startup.
+    // Note: req.path here is relative to the /api mount point, so
+    // /api/auth/google becomes /auth/google.
+    const isGoogleOAuthRoute =
+      req.path === '/auth/google' ||
+      req.path === '/auth/google/callback';
+
+    if (!isGoogleOAuthRoute) {
+      res.setHeader('x-service-state', 'warming-up');
+      return res.status(503).json({
+        success: false,
+        error: 'Database is warming up. Try again shortly.',
+        db: {
+          phase: database.phase,
+          isConnecting: database.isConnecting,
+          attempts: database.attempts,
+        },
+      });
+    }
   }
 
   next();

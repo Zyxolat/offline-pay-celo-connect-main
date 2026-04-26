@@ -334,15 +334,45 @@ const getGoogleCallbackRedirectTo = (req: Request) => {
   return '/dashboard';
 };
 
+const normalizeChallenge = (challenge: unknown): string => {
+  if (typeof challenge === 'string' && challenge.trim()) {
+    return challenge.trim();
+  }
+
+  // @simplewebauthn/server may return challenge as a Buffer or Uint8Array in
+  // some versions. Normalize to a base64url string so the frontend can decode it.
+  if (Buffer.isBuffer(challenge)) {
+    return challenge.toString('base64url');
+  }
+
+  if (challenge instanceof Uint8Array) {
+    return Buffer.from(challenge).toString('base64url');
+  }
+
+  if (
+    challenge !== null &&
+    typeof challenge === 'object' &&
+    'type' in (challenge as Record<string, unknown>) &&
+    (challenge as { type?: unknown }).type === 'Buffer' &&
+    Array.isArray((challenge as { data?: unknown }).data)
+  ) {
+    return Buffer.from((challenge as { data: number[] }).data).toString('base64url');
+  }
+
+  throw new Error('Generated authentication options did not include a valid challenge.');
+};
+
 const serializeAuthenticationOptions = (
   options: Awaited<ReturnType<typeof webauthnConfig.generateAuthenticationOptions>>,
 ) => {
-  if (!options || typeof options.challenge !== 'string' || !options.challenge.trim()) {
-    throw new Error('Generated authentication options did not include a valid challenge.');
+  if (!options) {
+    throw new Error('Generated authentication options are missing.');
   }
 
+  const challenge = normalizeChallenge(options.challenge);
+
   return {
-    challenge: options.challenge,
+    challenge,
     allowCredentials: Array.isArray(options.allowCredentials)
       ? options.allowCredentials.map((credential) => {
           if (!credential || typeof credential.id !== 'string' || !credential.id.trim()) {
@@ -498,7 +528,18 @@ export const authController = {
   async googleStart(req: Request, res: Response) {
     try {
       if (!config.google.enabled || !googleOAuthClient) {
-        logAuthEvent('WARN', 'Google sign-in attempted while disabled', res);
+        logAuthEvent('WARN', 'Google sign-in attempted while disabled', res, {
+          hasClientId: Boolean(process.env.GOOGLE_CLIENT_ID || process.env.VITE_GOOGLE_CLIENT_ID),
+          hasClientSecret: Boolean(process.env.GOOGLE_CLIENT_SECRET),
+        });
+
+        // If the request accepts JSON (e.g. a fetch/XHR call), return a JSON error.
+        // Otherwise redirect the browser to the frontend error page.
+        const acceptsJson = req.headers.accept?.includes('application/json');
+        if (acceptsJson) {
+          return errorResponse(res, 'Google sign-in is not enabled on this server. Set GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET.', 503);
+        }
+
         return redirectToFrontendGoogleCallback(res, {
           status: 'error',
           error: 'Google sign-in is not configured on this server.',
@@ -827,6 +868,16 @@ export const authController = {
           transports: asAuthenticatorTransports(credential.transports),
         })),
       );
+
+      logAuthEvent('INFO', 'Passkey login raw options generated', res, {
+        userId: user.id,
+        email,
+        challengeType: typeof (generatedOptions as { challenge?: unknown }).challenge,
+        hasChallenge: Boolean((generatedOptions as { challenge?: unknown }).challenge),
+        rpId: config.webauthn.rpID,
+        origin: config.webauthn.origin,
+      });
+
       const options = serializeAuthenticationOptions(generatedOptions);
 
       await ChallengeModel.deleteActiveByUser(user.id, 'login');
@@ -836,7 +887,9 @@ export const authController = {
         userId: user.id,
         email,
         challengeId: challenge.id,
+        challengeLength: options.challenge.length,
         allowCredentials: options.allowCredentials?.length ?? 0,
+        rpId: options.rpId,
       });
 
       successResponse(res, {
