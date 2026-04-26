@@ -164,6 +164,14 @@ export function processCredentialCreationOptions(options: any) {
 
 /**
  * Process WebAuthn credential request options
+ *
+ * Always uses manual normalization as the primary path to guarantee that
+ * `challenge` is a proper ArrayBuffer that every browser accepts in
+ * `navigator.credentials.get({ publicKey })`.  The native
+ * `parseRequestOptionsFromJSON` API is intentionally skipped here because
+ * some browser versions return a plain object whose `challenge` property is
+ * not recognized as a valid ArrayBuffer by the internal WebAuthn stack,
+ * producing the "Missing required 'challenge' member" DOMException.
  */
 export function processCredentialRequestOptions(options: any) {
   const source = getPublicKeyOptionsSource(options);
@@ -176,21 +184,10 @@ export function processCredentialRequestOptions(options: any) {
     throw new Error('Login allowCredentials is invalid.');
   }
 
-  const parsers = getPublicKeyCredentialParsers();
-  if (
-    parsers?.parseRequestOptionsFromJSON &&
-    typeof source.challenge === 'string' &&
-    isStringBackedCredentialDescriptorList(source.allowCredentials)
-  ) {
-    try {
-      return parsers.parseRequestOptionsFromJSON(source);
-    } catch {
-      // Fall back to manual normalization for older payload variants.
-    }
-  }
+  const challenge = normalizeBinaryValue(source.challenge, 'Login challenge');
 
   return {
-    challenge: normalizeBinaryValue(source.challenge, 'Login challenge'),
+    challenge,
     allowCredentials: Array.isArray(source.allowCredentials)
       ? source.allowCredentials.map((credential: any) => ({
           ...credential,
