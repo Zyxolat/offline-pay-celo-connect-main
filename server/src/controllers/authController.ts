@@ -59,8 +59,7 @@ const authenticationVerifySchema = z.object({
 
 const disabledAuthMessage = 'Unauthorized';
 const GOOGLE_STATE_TTL = '10m';
-const GOOGLE_CALLBACK_PATH = '/auth/google/callback';
-const GOOGLE_FRONTEND_CALLBACK_PATH = '/auth/google/callback';
+const GOOGLE_FRONTEND_CALLBACK_PATH = '/auth/google/result';
 const PASSWORD_HASH_ROUNDS = 12;
 
 type SessionAuthMethod = 'admin' | 'passkey' | 'google' | 'password';
@@ -227,11 +226,78 @@ const mapGoogleOAuthError = (error: unknown) => {
     return 'Google sign-in is misconfigured. The registered callback URL does not match this app.';
   }
 
+  if (lowerMessage.includes('invalid_client') || lowerMessage.includes('unauthorized_client')) {
+    return 'Google sign-in is misconfigured. Check the Google OAuth client ID and secret for this environment.';
+  }
+
   if (lowerMessage.includes('state')) {
     return 'Google sign-in state was invalid or expired. Please try again.';
   }
 
   return 'Google sign-in could not be completed. Please try again.';
+};
+
+const mapWebAuthnVerificationError = (
+  phase: 'registration' | 'login',
+  error: unknown,
+) => {
+  const normalized = normalizeError(error);
+  const lowerMessage = normalized.message.toLowerCase();
+
+  if (lowerMessage.includes('challenge')) {
+    return `Passkey ${phase} expired. Start again and approve the newest prompt.`;
+  }
+
+  if (lowerMessage.includes('origin') || lowerMessage.includes('rp id') || lowerMessage.includes('rpid')) {
+    return 'This passkey was created for a different app URL. Check your frontend origin and try again.';
+  }
+
+  if (lowerMessage.includes('user verification')) {
+    return 'Your device could not verify your identity. Unlock it and try again.';
+  }
+
+  if (lowerMessage.includes('credential')) {
+    return phase === 'registration'
+      ? 'This passkey is already registered or could not be matched.'
+      : 'This passkey is not registered for this account.';
+  }
+
+  return phase === 'registration'
+    ? 'Passkey registration could not be verified.'
+    : 'Passkey login could not be verified.';
+};
+
+const normalizeCredentialId = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    throw new Error('Credential identifier is missing.');
+  }
+
+  return Buffer.from(trimmed.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('base64url');
+};
+
+const getCredentialResponseIds = (credential: Pick<RegistrationResponseJSON | AuthenticationResponseJSON, 'id' | 'rawId'>) =>
+  [...new Set([credential.id, credential.rawId].filter((value): value is string => typeof value === 'string' && value.trim().length > 0))]
+    .map(normalizeCredentialId);
+
+const findCredentialByAnyId = async (candidateIds: string[]) => {
+  const matches = await Promise.all(candidateIds.map((candidateId) => CredentialModel.findByCredentialId(candidateId)));
+  return matches.find((match): match is NonNullable<typeof match> => Boolean(match)) ?? null;
+};
+
+const findUserCredentialByAnyId = async (userId: string, candidateIds: string[]) => {
+  const credentials = await CredentialModel.findByUserId(userId);
+  const normalizedCandidates = new Set(candidateIds.map(normalizeCredentialId));
+
+  return (
+    credentials.find((credential) => {
+      try {
+        return normalizedCandidates.has(normalizeCredentialId(credential.credential_id));
+      } catch {
+        return normalizedCandidates.has(credential.credential_id);
+      }
+    }) ?? null
+  );
 };
 
 const getValidChallenge = async (
@@ -266,6 +332,35 @@ const getGoogleCallbackRedirectTo = (req: Request) => {
   }
 
   return '/dashboard';
+};
+
+const serializeAuthenticationOptions = (
+  options: Awaited<ReturnType<typeof webauthnConfig.generateAuthenticationOptions>>,
+) => {
+  if (!options || typeof options.challenge !== 'string' || !options.challenge.trim()) {
+    throw new Error('Generated authentication options did not include a valid challenge.');
+  }
+
+  return {
+    challenge: options.challenge,
+    allowCredentials: Array.isArray(options.allowCredentials)
+      ? options.allowCredentials.map((credential) => {
+          if (!credential || typeof credential.id !== 'string' || !credential.id.trim()) {
+            throw new Error('Generated authentication options contained an invalid allowCredentials entry.');
+          }
+
+          return {
+            id: credential.id,
+            type: credential.type,
+            transports: credential.transports,
+          };
+        })
+      : [],
+    rpId: options.rpId,
+    timeout: options.timeout,
+    userVerification: options.userVerification,
+    extensions: options.extensions,
+  };
 };
 
 export const authController = {
@@ -644,7 +739,8 @@ export const authController = {
         return errorResponse(res, 'Registration challenge not found or expired.', 400);
       }
 
-      const existingCredential = await CredentialModel.findByCredentialId(payload.credential.id);
+      const candidateCredentialIds = getCredentialResponseIds(payload.credential);
+      const existingCredential = await findCredentialByAnyId(candidateCredentialIds);
       if (existingCredential && existingCredential.user_id !== user.id) {
         return errorResponse(res, 'This passkey is already linked to another account.', 409);
       }
@@ -669,14 +765,16 @@ export const authController = {
         return errorResponse(res, 'Passkey registration could not be verified.', 400);
       }
 
+      const canonicalCredentialId = bufferToBase64Url(verification.registrationInfo.credentialID);
+
       if (!existingCredential) {
         await CredentialModel.create(
           user.id,
-          payload.credential.id,
+          canonicalCredentialId,
           Buffer.from(verification.registrationInfo.credentialPublicKey),
           {
             credentialPublicKey: Array.from(verification.registrationInfo.credentialPublicKey),
-            credentialID: bufferToBase64Url(verification.registrationInfo.credentialID),
+            credentialID: canonicalCredentialId,
             credentialDeviceType: verification.registrationInfo.credentialDeviceType,
             credentialBackedUp: verification.registrationInfo.credentialBackedUp,
           },
@@ -685,7 +783,7 @@ export const authController = {
         );
       }
 
-      await UserModel.setPasskeyId(user.id, payload.credential.id);
+      await UserModel.setPasskeyId(user.id, canonicalCredentialId);
       await ChallengeModel.delete(challenge.id);
       await AuthSessionModel.revokeUserSessions(user.id);
 
@@ -696,7 +794,7 @@ export const authController = {
       logAuthEvent('ERROR', 'Passkey registration verification failed', res, {
         error: normalizeError(error),
       });
-      errorResponse(res, 'Failed to verify passkey registration', 400);
+      errorResponse(res, mapWebAuthnVerificationError('registration', error), 400);
     }
   },
 
@@ -722,13 +820,14 @@ export const authController = {
         return errorResponse(res, 'No passkey is registered for this account yet.', 404);
       }
 
-      const options = await webauthnConfig.generateAuthenticationOptions(
+      const generatedOptions = await webauthnConfig.generateAuthenticationOptions(
         credentials.map((credential) => ({
           id: Buffer.from(credential.credential_id, 'base64url'),
           type: 'public-key' as const,
           transports: asAuthenticatorTransports(credential.transports),
         })),
       );
+      const options = serializeAuthenticationOptions(generatedOptions);
 
       await ChallengeModel.deleteActiveByUser(user.id, 'login');
       const challenge = await ChallengeModel.create(Buffer.from(options.challenge, 'base64url'), 'login', user.id);
@@ -774,8 +873,9 @@ export const authController = {
         return errorResponse(res, 'Login challenge not found or expired.', 400);
       }
 
-      const credential = await CredentialModel.findByCredentialId(payload.credential.id);
-      if (!credential || credential.user_id !== user.id) {
+      const candidateCredentialIds = getCredentialResponseIds(payload.credential);
+      const credential = await findUserCredentialByAnyId(user.id, candidateCredentialIds);
+      if (!credential) {
         return errorResponse(res, 'This passkey is not registered for the supplied account.', 401);
       }
 
@@ -797,7 +897,7 @@ export const authController = {
         userId: user.id,
         email,
         challengeId: challenge.id,
-        credentialId: payload.credential.id,
+        credentialId: credential.credential_id,
         verified: verification.verified,
       });
 
@@ -805,8 +905,8 @@ export const authController = {
         return errorResponse(res, 'Passkey login could not be verified.', 401);
       }
 
-      await CredentialModel.updateCounter(payload.credential.id, verification.authenticationInfo.newCounter);
-      await UserModel.setPasskeyId(user.id, payload.credential.id);
+      await CredentialModel.updateCounter(credential.credential_id, verification.authenticationInfo.newCounter);
+      await UserModel.setPasskeyId(user.id, credential.credential_id);
       await ChallengeModel.delete(challenge.id);
       await AuthSessionModel.revokeUserSessions(user.id);
 
@@ -817,7 +917,7 @@ export const authController = {
       logAuthEvent('ERROR', 'Passkey login verification failed', res, {
         error: normalizeError(error),
       });
-      errorResponse(res, 'Failed to verify passkey login', 401);
+      errorResponse(res, mapWebAuthnVerificationError('login', error), 401);
     }
   },
 
