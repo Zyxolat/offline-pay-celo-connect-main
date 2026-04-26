@@ -28,6 +28,10 @@ function normalizeAbsoluteUrl(value: string) {
   return value.replace(/\/+$/, '');
 }
 
+function ensureLeadingSlash(value: string) {
+  return value.startsWith('/') ? value : `/${value}`;
+}
+
 export function getAppBaseUrl() {
   const configured = getViteEnv('VITE_APP_URL');
 
@@ -82,10 +86,25 @@ export function getApiRootUrl() {
   return normalizeApiRootUrl(getApiBaseUrl());
 }
 
+export function buildApiUrl(pathname: string) {
+  const normalizedPath = ensureLeadingSlash(pathname);
+  const apiBaseUrl = getApiBaseUrl();
+
+  if (isAbsoluteHttpUrl(apiBaseUrl)) {
+    return new URL(normalizedPath.replace(/^\/+/, ''), `${normalizeApiBaseUrl(apiBaseUrl)}/`).toString();
+  }
+
+  return `${normalizeApiBaseUrl(apiBaseUrl)}${normalizedPath}`;
+}
+
 export function getGoogleAuthStartUrl(redirectTo = '/dashboard') {
-  const url = new URL('/auth/google', getApiRootUrl());
+  const url = new URL(
+    buildApiUrl('/auth/google'),
+    typeof window !== 'undefined' ? window.location.origin : 'http://localhost',
+  );
+
   url.searchParams.set('redirectTo', redirectTo.startsWith('/') ? redirectTo : '/dashboard');
-  return url.toString();
+  return isAbsoluteHttpUrl(getApiBaseUrl()) ? url.toString() : `${url.pathname}${url.search}`;
 }
 
 export function getWalletConnectProjectId() {

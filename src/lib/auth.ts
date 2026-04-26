@@ -11,6 +11,11 @@ export interface SessionUser {
 
 type BrowserStorageMode = 'local' | 'session';
 
+const memorySession = {
+  sessionToken: null as string | null,
+  user: null as string | null,
+};
+
 function getBrowserStorage(mode: BrowserStorageMode): Storage | null {
   if (typeof window === 'undefined') {
     return null;
@@ -18,8 +23,7 @@ function getBrowserStorage(mode: BrowserStorageMode): Storage | null {
 
   try {
     return mode === 'local' ? window.localStorage : window.sessionStorage;
-  } catch (error) {
-    console.error(`[auth] ${mode} storage is unavailable.`, error);
+  } catch {
     return null;
   }
 }
@@ -31,8 +35,8 @@ const clearSessionStorage = (storage: Storage) => {
   try {
     storage.removeItem('sessionToken');
     storage.removeItem('user');
-  } catch (error) {
-    console.error('[auth] Failed to clear session.', error);
+  } catch {
+    // Ignore storage cleanup failures and continue with in-memory session state.
   }
 };
 
@@ -44,7 +48,7 @@ export const getStoredToken = () => {
     }
   }
 
-  return null;
+  return memorySession.sessionToken;
 };
 
 export const getStoredUser = (): SessionUser | null => {
@@ -56,28 +60,35 @@ export const getStoredUser = (): SessionUser | null => {
 
     try {
       return JSON.parse(raw) as SessionUser;
-    } catch (error) {
-      console.error('[auth] Failed to parse stored user session. Clearing invalid session state.', error);
+    } catch {
       clearSessionStorage(storage);
     }
   }
 
-  return null;
+  if (!memorySession.user) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(memorySession.user) as SessionUser;
+  } catch {
+    memorySession.sessionToken = null;
+    memorySession.user = null;
+    return null;
+  }
 };
 
 export const storeSession = (sessionToken: string, user: SessionUser) => {
-  const storages = getAllStorages();
-  if (storages.length === 0) {
-    console.error('[auth] Unable to store session because browser storage is unavailable.');
-    return;
-  }
+  memorySession.sessionToken = sessionToken;
+  memorySession.user = JSON.stringify(user);
 
+  const storages = getAllStorages();
   for (const storage of storages) {
     try {
       storage.setItem('sessionToken', sessionToken);
       storage.setItem('user', JSON.stringify(user));
-    } catch (error) {
-      console.error('[auth] Failed to persist session.', error);
+    } catch {
+      // Ignore persistence failures and continue with in-memory session state.
     }
   }
 };
@@ -92,6 +103,9 @@ export const hasValidStoredAdminSession = () => {
 export const hasStoredSession = () => Boolean(getStoredToken() && getStoredUser());
 
 export const clearSession = () => {
+  memorySession.sessionToken = null;
+  memorySession.user = null;
+
   const storages = getAllStorages();
   if (storages.length === 0) {
     return;

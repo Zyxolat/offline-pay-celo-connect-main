@@ -4,7 +4,10 @@ const withApiErrorLogging = async <T>(label: string, request: Promise<T>) => {
   try {
     return await request;
   } catch (error) {
-    console.error(`[apiClient] ${label} failed`, error);
+    if (typeof (error as { response?: { data?: { error?: string } } }).response?.data?.error === 'string') {
+      (error as { message?: string }).message = (error as { response: { data: { error: string } } }).response.data.error;
+    }
+
     throw error;
   }
 };

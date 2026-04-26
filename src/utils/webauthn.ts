@@ -7,6 +7,26 @@ function padBase64(base64: string): string {
   return `${base64}${'='.repeat(4 - remainder)}`;
 }
 
+type BufferLikeJson = {
+  type: 'Buffer';
+  data: number[];
+};
+
+function isBufferLikeJson(value: unknown): value is BufferLikeJson {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      'type' in value &&
+      'data' in value &&
+      (value as { type?: unknown }).type === 'Buffer' &&
+      Array.isArray((value as { data?: unknown }).data),
+  );
+}
+
+function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  return bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+}
+
 export function base64UrlToUint8Array(base64Url: string): Uint8Array {
   if (!base64Url || typeof base64Url !== 'string') {
     throw new Error('Expected a base64url string.');
@@ -21,6 +41,61 @@ export function base64UrlToUint8Array(base64Url: string): Uint8Array {
   }
 
   return bytes;
+}
+
+function normalizeBinaryValue(value: unknown, label: string): ArrayBuffer {
+  if (typeof value === 'string') {
+    return toArrayBuffer(base64UrlToUint8Array(value));
+  }
+
+  if (value instanceof ArrayBuffer) {
+    return value.slice(0);
+  }
+
+  if (ArrayBuffer.isView(value)) {
+    return toArrayBuffer(new Uint8Array(value.buffer, value.byteOffset, value.byteLength));
+  }
+
+  if (Array.isArray(value)) {
+    return toArrayBuffer(Uint8Array.from(value));
+  }
+
+  if (isBufferLikeJson(value)) {
+    return toArrayBuffer(Uint8Array.from(value.data));
+  }
+
+  throw new Error(`${label} is missing or invalid.`);
+}
+
+function getPublicKeyOptionsSource<T>(options: T): T {
+  if (
+    options &&
+    typeof options === 'object' &&
+    'publicKey' in (options as Record<string, unknown>) &&
+    (options as Record<string, unknown>).publicKey &&
+    typeof (options as Record<string, unknown>).publicKey === 'object'
+  ) {
+    return (options as { publicKey: T }).publicKey;
+  }
+
+  return options;
+}
+
+type PublicKeyCredentialJsonParsers = typeof PublicKeyCredential & {
+  parseCreationOptionsFromJSON?: (options: unknown) => PublicKeyCredentialCreationOptions;
+  parseRequestOptionsFromJSON?: (options: unknown) => PublicKeyCredentialRequestOptions;
+};
+
+function getPublicKeyCredentialParsers() {
+  if (typeof PublicKeyCredential === 'undefined') {
+    return null;
+  }
+
+  return PublicKeyCredential as PublicKeyCredentialJsonParsers;
+}
+
+function isStringBackedCredentialDescriptorList(value: unknown): boolean {
+  return !Array.isArray(value) || value.every((credential) => typeof credential?.id === 'string');
 }
 
 /**
@@ -43,35 +118,47 @@ export function arrayBufferToBase64Url(buffer: ArrayBuffer): string {
  * Process WebAuthn credential creation options
  */
 export function processCredentialCreationOptions(options: any) {
-  if (!options) {
+  const source = getPublicKeyOptionsSource(options);
+
+  if (!source) {
     throw new Error('Missing passkey registration options.');
   }
 
-  if (typeof options.challenge !== 'string') {
-    throw new Error('Registration challenge is missing or invalid.');
-  }
-
-  if (!options.user || typeof options.user.id !== 'string') {
+  if (!source.user || source.user.id == null) {
     throw new Error('Registration user identifier is missing or invalid.');
   }
 
-  if (options.excludeCredentials && !Array.isArray(options.excludeCredentials)) {
+  if (source.excludeCredentials && !Array.isArray(source.excludeCredentials)) {
     throw new Error('Registration excludeCredentials is invalid.');
   }
 
+  const parsers = getPublicKeyCredentialParsers();
+  if (
+    parsers?.parseCreationOptionsFromJSON &&
+    typeof source.challenge === 'string' &&
+    typeof source.user?.id === 'string' &&
+    isStringBackedCredentialDescriptorList(source.excludeCredentials)
+  ) {
+    try {
+      return parsers.parseCreationOptionsFromJSON(source);
+    } catch {
+      // Fall back to manual normalization for older payload variants.
+    }
+  }
+
   return {
-    ...options,
-    challenge: base64UrlToUint8Array(options.challenge),
+    ...source,
+    challenge: normalizeBinaryValue(source.challenge, 'Registration challenge'),
     user: {
-      ...options.user,
-      id: base64UrlToUint8Array(options.user.id),
+      ...source.user,
+      id: normalizeBinaryValue(source.user.id, 'Registration user identifier'),
     },
-    excludeCredentials: Array.isArray(options.excludeCredentials)
-      ? options.excludeCredentials.map((credential: any) => ({
+    excludeCredentials: Array.isArray(source.excludeCredentials)
+      ? source.excludeCredentials.map((credential: any) => ({
           ...credential,
-          id: typeof credential.id === 'string' ? base64UrlToUint8Array(credential.id) : credential.id,
+          id: normalizeBinaryValue(credential.id, 'Registration exclude credential identifier'),
         }))
-      : options.excludeCredentials,
+      : source.excludeCredentials,
   };
 }
 
@@ -79,27 +166,41 @@ export function processCredentialCreationOptions(options: any) {
  * Process WebAuthn credential request options
  */
 export function processCredentialRequestOptions(options: any) {
-  if (!options) {
+  const source = getPublicKeyOptionsSource(options);
+
+  if (!source) {
     throw new Error('Missing passkey login options.');
   }
 
-  if (typeof options.challenge !== 'string') {
-    throw new Error('Login challenge is missing or invalid.');
-  }
-
-  if (options.allowCredentials && !Array.isArray(options.allowCredentials)) {
+  if (source.allowCredentials && !Array.isArray(source.allowCredentials)) {
     throw new Error('Login allowCredentials is invalid.');
   }
 
+  const parsers = getPublicKeyCredentialParsers();
+  if (
+    parsers?.parseRequestOptionsFromJSON &&
+    typeof source.challenge === 'string' &&
+    isStringBackedCredentialDescriptorList(source.allowCredentials)
+  ) {
+    try {
+      return parsers.parseRequestOptionsFromJSON(source);
+    } catch {
+      // Fall back to manual normalization for older payload variants.
+    }
+  }
+
   return {
-    ...options,
-    challenge: base64UrlToUint8Array(options.challenge),
-    allowCredentials: Array.isArray(options.allowCredentials)
-      ? options.allowCredentials.map((credential: any) => ({
+    challenge: normalizeBinaryValue(source.challenge, 'Login challenge'),
+    allowCredentials: Array.isArray(source.allowCredentials)
+      ? source.allowCredentials.map((credential: any) => ({
           ...credential,
-          id: typeof credential.id === 'string' ? base64UrlToUint8Array(credential.id) : credential.id,
+          id: normalizeBinaryValue(credential.id, 'Login credential identifier'),
         }))
-      : options.allowCredentials,
+      : source.allowCredentials,
+    rpId: source.rpId,
+    timeout: source.timeout,
+    userVerification: source.userVerification,
+    extensions: source.extensions,
   };
 }
 

@@ -21,9 +21,35 @@ describe('webauthn utils', () => {
       excludeCredentials: [{ id: 'CQoLDA', type: 'public-key' }],
     });
 
-    expect(publicKey.challenge).toBeInstanceOf(Uint8Array);
-    expect(publicKey.user.id).toBeInstanceOf(Uint8Array);
-    expect(publicKey.excludeCredentials[0].id).toBeInstanceOf(Uint8Array);
+    expect(publicKey.challenge).toBeInstanceOf(ArrayBuffer);
+    expect(publicKey.user.id).toBeInstanceOf(ArrayBuffer);
+    expect(publicKey.excludeCredentials[0].id).toBeInstanceOf(ArrayBuffer);
+  });
+
+  it('normalizes login options for navigator.credentials.get', () => {
+    const publicKey = processCredentialRequestOptions({
+      challenge: 'AQIDBA',
+      allowCredentials: [{ id: 'CQoLDA', type: 'public-key' }],
+      rpId: 'localhost',
+      timeout: 60000,
+      userVerification: 'required',
+    });
+
+    expect(publicKey.challenge).toBeInstanceOf(ArrayBuffer);
+    expect(publicKey.allowCredentials?.[0].id).toBeInstanceOf(ArrayBuffer);
+    expect(publicKey.rpId).toBe('localhost');
+  });
+
+  it('accepts nested publicKey-style login payloads and buffer-like ids', () => {
+    const publicKey = processCredentialRequestOptions({
+      publicKey: {
+        challenge: { type: 'Buffer', data: [1, 2, 3, 4] },
+        allowCredentials: [{ id: [5, 6, 7, 8], type: 'public-key' }],
+      },
+    });
+
+    expect(publicKey.challenge).toBeInstanceOf(ArrayBuffer);
+    expect(publicKey.allowCredentials?.[0].id).toBeInstanceOf(ArrayBuffer);
   });
 
   it('rejects malformed login options before navigator.credentials.get', () => {
