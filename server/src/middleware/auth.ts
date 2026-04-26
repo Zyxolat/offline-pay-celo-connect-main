@@ -7,10 +7,10 @@ const normalizeIp = (value?: string | null) => value?.replace(/^::ffff:/, '') ??
 
 const respondUnauthorized = (res: Response, reason: 'missing' | 'expired' | 'invalid' | 'session') => {
   const messageByReason = {
-    missing: 'Unauthorized: Missing token',
-    expired: 'Unauthorized: Token expired',
-    invalid: 'Unauthorized: Invalid token',
-    session: 'Unauthorized: Session expired',
+    missing: 'Please sign in to continue.',
+    expired: 'Your session expired. Please sign in again.',
+    invalid: 'Your session is invalid. Please sign in again.',
+    session: 'Your session was closed. Please sign in again.',
   } as const;
 
   return res.status(401).json({ error: messageByReason[reason] });

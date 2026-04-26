@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { getStoredUser, hasStoredSession, storeSession, type SessionUser } from '@/lib/auth';
@@ -33,7 +34,7 @@ export const GoogleCallback = () => {
 
     if (searchParams.get('code') || searchParams.get('state')) {
       setError(
-        'Google is redirecting to the frontend instead of the backend callback. Set GOOGLE_CALLBACK_URL to your Railway backend /auth/google/callback URL.',
+        'Google is redirecting to the frontend instead of the backend callback. Set GOOGLE_CALLBACK_URL to your backend /auth/google/callback or /api/auth/google/callback URL.',
       );
       return;
     }
@@ -50,7 +51,6 @@ export const GoogleCallback = () => {
 
     try {
       const result = decodeBase64UrlJson<GoogleCallbackResult>(encodedResult);
-      console.info('[auth] Google OAuth callback parsed', result);
 
       if (!result.sessionToken || !result.user) {
         throw new Error('Google sign-in result was incomplete.');
@@ -60,7 +60,6 @@ export const GoogleCallback = () => {
       window.history.replaceState({}, document.title, window.location.pathname);
       navigate(result.redirectTo?.startsWith('/') ? result.redirectTo : '/dashboard', { replace: true });
     } catch (parseError) {
-      console.error('[auth] Failed to parse Google OAuth callback result', parseError);
       setError(parseError instanceof Error ? parseError.message : 'Google sign-in could not be completed.');
     }
   }, [navigate, searchParams, storedUser]);
@@ -77,7 +76,10 @@ export const GoogleCallback = () => {
         </Alert>
       ) : (
         <Alert>
-          <AlertDescription>Completing Google sign-in...</AlertDescription>
+          <AlertDescription className="flex items-center gap-2">
+            <Loader2 className="animate-spin" size={16} />
+            Completing Google sign-in...
+          </AlertDescription>
         </Alert>
       )}
     </div>

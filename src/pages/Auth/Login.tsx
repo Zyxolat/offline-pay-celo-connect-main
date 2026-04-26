@@ -6,6 +6,7 @@ import { GoogleAuthButton } from '@/components/auth/GoogleAuthButton';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { AuthLayout } from '@/components/auth/AuthLayout';
+import { getGoogleAuthStartUrl } from '@/config/env';
 import {
   getStoredUser,
   hasStoredSession,
@@ -23,6 +24,7 @@ type AuthMode = 'user' | 'admin';
 type PasskeyAction = 'login' | 'signup';
 type PasswordAction = 'login' | 'signup';
 type UserAuthMethod = 'passkey' | 'password';
+type AuthAttempt = 'admin' | 'password' | 'passkey' | 'google';
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   const maybeAxiosError = error as {
@@ -44,8 +46,27 @@ const getPasskeyErrorMessage = (error: unknown, fallback: string) => {
     return 'Passkey request was cancelled or timed out. Please try again.';
   }
 
-  if (maybeDomError?.message?.includes('challenge')) {
-    return 'Passkey request expired or was malformed. Please try again.';
+  if (maybeDomError?.name === 'InvalidStateError') {
+    return 'This passkey is already registered on this device. Try signing in instead.';
+  }
+
+  if (maybeDomError?.name === 'SecurityError') {
+    return 'Passkeys only work on HTTPS or localhost for this app.';
+  }
+
+  if (maybeDomError?.name === 'AbortError') {
+    return 'The passkey request was interrupted. Please try again.';
+  }
+
+  if (maybeDomError?.name === 'NotSupportedError') {
+    return 'This browser or device does not support the requested passkey action.';
+  }
+
+  if (
+    maybeDomError?.message?.includes('challenge') ||
+    maybeDomError?.message?.includes('CredentialsContainer')
+  ) {
+    return 'Passkey request data was invalid or expired. Please try again.';
   }
 
   return getErrorMessage(error, fallback);
@@ -87,8 +108,10 @@ export const Login = () => {
   const [adminPassword, setAdminPassword] = useState('');
   const [userPassword, setUserPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
+  const [submittingAction, setSubmittingAction] = useState<AuthAttempt | null>(null);
+  const [retryAction, setRetryAction] = useState<AuthAttempt | null>(null);
   const [error, setError] = useState('');
+  const isSubmitting = submittingAction !== null;
 
   const redirectTarget = useMemo(() => {
     const from = location.state as { from?: { pathname?: string } } | null;
@@ -121,42 +144,44 @@ export const Login = () => {
     return <Navigate to={isAdminUser(storedUser) ? '/admin' : '/dashboard'} replace />;
   }
 
-  const handleAdminSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setSubmitting(true);
+  const performAdminLogin = async () => {
+    setSubmittingAction('admin');
     setError('');
 
     try {
       const response = await authAPI.adminLogin(adminEmail.trim(), adminPassword);
       const result = response.data.data;
       storeSession(result.sessionToken, result.user);
+      setRetryAction(null);
       navigate('/admin', { replace: true });
     } catch (err) {
+      setRetryAction('admin');
       setError(getErrorMessage(err, 'Admin login failed.'));
     } finally {
-      setSubmitting(false);
+      setSubmittingAction(null);
     }
   };
 
-  const handlePasswordAuth = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-
+  const performPasswordAuth = async () => {
     if (!userEmail.trim()) {
+      setRetryAction('password');
       setError('Enter your email to continue.');
       return;
     }
 
     if (!userPassword) {
+      setRetryAction('password');
       setError('Enter your password to continue.');
       return;
     }
 
     if (passwordAction === 'signup' && userPassword !== confirmPassword) {
+      setRetryAction('password');
       setError('Passwords do not match.');
       return;
     }
 
-    setSubmitting(true);
+    setSubmittingAction('password');
     setError('');
 
     try {
@@ -168,8 +193,10 @@ export const Login = () => {
 
       const result = response.data.data;
       storeSession(result.sessionToken, result.user);
+      setRetryAction(null);
       navigate(redirectTarget, { replace: true });
     } catch (err) {
+      setRetryAction('password');
       setError(
         getErrorMessage(
           err,
@@ -177,23 +204,25 @@ export const Login = () => {
         ),
       );
     } finally {
-      setSubmitting(false);
+      setSubmittingAction(null);
     }
   };
 
-  const handlePasskeyAuth = async () => {
+  const performPasskeyAuth = async () => {
     if (!userEmail.trim()) {
+      setRetryAction('passkey');
       setError('Enter your email to continue.');
       return;
     }
 
     const passkeyError = await canUsePasskeys();
     if (passkeyError) {
+      setRetryAction('passkey');
       setError(passkeyError);
       return;
     }
 
-    setSubmitting(true);
+    setSubmittingAction('passkey');
     setError('');
 
     try {
@@ -216,6 +245,7 @@ export const Login = () => {
         );
         const result = verifyResponse.data.data;
         storeSession(result.sessionToken, result.user);
+        setRetryAction(null);
         navigate(redirectTarget, { replace: true });
         return;
       }
@@ -223,6 +253,11 @@ export const Login = () => {
       const optionsResponse = await authAPI.beginPasskeyLogin(email);
       const { challengeId, options } = optionsResponse.data.data;
       const publicKey = processCredentialRequestOptions(options);
+
+      if (!publicKey.challenge) {
+        throw new Error('Login challenge is missing or invalid.');
+      }
+
       const credential = await navigator.credentials.get({ publicKey });
 
       if (!(credential instanceof PublicKeyCredential)) {
@@ -236,11 +271,63 @@ export const Login = () => {
       );
       const result = verifyResponse.data.data;
       storeSession(result.sessionToken, result.user);
+      setRetryAction(null);
       navigate(redirectTarget, { replace: true });
     } catch (err) {
+      setRetryAction('passkey');
       setError(getPasskeyErrorMessage(err, 'Passkey authentication failed.'));
     } finally {
-      setSubmitting(false);
+      setSubmittingAction(null);
+    }
+  };
+
+  const handleAdminSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void performAdminLogin();
+  };
+
+  const handlePasswordAuth = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    void performPasswordAuth();
+  };
+
+  const handleGoogleAuthError = (message: string) => {
+    setSubmittingAction(null);
+    setRetryAction('google');
+    setError(message);
+  };
+
+  const startGoogleAuth = () => {
+    try {
+      setSubmittingAction('google');
+      setRetryAction('google');
+      setError('');
+      window.location.assign(getGoogleAuthStartUrl(redirectTarget));
+    } catch (error) {
+      handleGoogleAuthError(
+        error instanceof Error ? error.message : 'Google sign-in could not be started. Please try again.',
+      );
+    }
+  };
+
+  const retryLastAction = () => {
+    if (retryAction === 'admin') {
+      void performAdminLogin();
+      return;
+    }
+
+    if (retryAction === 'password') {
+      void performPasswordAuth();
+      return;
+    }
+
+    if (retryAction === 'passkey') {
+      void performPasskeyAuth();
+      return;
+    }
+
+    if (retryAction === 'google') {
+      startGoogleAuth();
     }
   };
 
@@ -254,9 +341,11 @@ export const Login = () => {
           <Button
             type="button"
             variant={mode === 'user' ? 'default' : 'ghost'}
+            disabled={isSubmitting}
             onClick={() => {
               setMode('user');
               setError('');
+              setRetryAction(null);
             }}
           >
             User
@@ -264,9 +353,11 @@ export const Login = () => {
           <Button
             type="button"
             variant={mode === 'admin' ? 'default' : 'ghost'}
+            disabled={isSubmitting}
             onClick={() => {
               setMode('admin');
               setError('');
+              setRetryAction(null);
             }}
           >
             Admin
@@ -275,7 +366,14 @@ export const Login = () => {
 
         {error ? (
           <Alert variant="destructive">
-            <AlertDescription>{error}</AlertDescription>
+            <AlertDescription className="space-y-3">
+              <div>{error}</div>
+              {retryAction && !isSubmitting ? (
+                <Button className="w-full sm:w-auto" type="button" variant="outline" onClick={retryLastAction}>
+                  Retry
+                </Button>
+              ) : null}
+            </AlertDescription>
           </Alert>
         ) : null}
 
@@ -307,8 +405,15 @@ export const Login = () => {
               />
             </div>
 
-            <Button className="w-full" type="submit" disabled={submitting}>
-              {submitting ? 'Signing in...' : 'Sign in as admin'}
+            <Button className="w-full" type="submit" disabled={isSubmitting}>
+              {submittingAction === 'admin' ? (
+                <>
+                  <Loader2 className="mr-2 animate-spin" size={16} />
+                  Signing in...
+                </>
+              ) : (
+                'Sign in as admin'
+              )}
             </Button>
           </form>
         ) : (
@@ -317,9 +422,11 @@ export const Login = () => {
               <Button
                 type="button"
                 variant={userAuthMethod === 'passkey' ? 'default' : 'ghost'}
+                disabled={isSubmitting}
                 onClick={() => {
                   setUserAuthMethod('passkey');
                   setError('');
+                  setRetryAction(null);
                 }}
               >
                 Passkey
@@ -327,9 +434,11 @@ export const Login = () => {
               <Button
                 type="button"
                 variant={userAuthMethod === 'password' ? 'default' : 'ghost'}
+                disabled={isSubmitting}
                 onClick={() => {
                   setUserAuthMethod('password');
                   setError('');
+                  setRetryAction(null);
                 }}
               >
                 Password
@@ -342,9 +451,11 @@ export const Login = () => {
                   <Button
                     type="button"
                     variant={passwordAction === 'login' ? 'default' : 'ghost'}
+                    disabled={isSubmitting}
                     onClick={() => {
                       setPasswordAction('login');
                       setError('');
+                      setRetryAction(null);
                     }}
                   >
                     Sign In
@@ -352,9 +463,11 @@ export const Login = () => {
                   <Button
                     type="button"
                     variant={passwordAction === 'signup' ? 'default' : 'ghost'}
+                    disabled={isSubmitting}
                     onClick={() => {
                       setPasswordAction('signup');
                       setError('');
+                      setRetryAction(null);
                     }}
                   >
                     Create Account
@@ -420,11 +533,11 @@ export const Login = () => {
                   </div>
                 </div>
 
-                <Button className="w-full" type="submit" disabled={submitting}>
-                  {submitting ? (
+                <Button className="w-full" type="submit" disabled={isSubmitting}>
+                  {submittingAction === 'password' ? (
                     <>
                       <Loader2 className="mr-2 animate-spin" size={16} />
-                      Working...
+                      {passwordAction === 'signup' ? 'Creating account...' : 'Signing in...'}
                     </>
                   ) : passwordAction === 'signup' ? (
                     'Create account with password'
@@ -439,9 +552,11 @@ export const Login = () => {
                   <Button
                     type="button"
                     variant={passkeyAction === 'login' ? 'default' : 'ghost'}
+                    disabled={isSubmitting}
                     onClick={() => {
                       setPasskeyAction('login');
                       setError('');
+                      setRetryAction(null);
                     }}
                   >
                     Sign In
@@ -449,9 +564,11 @@ export const Login = () => {
                   <Button
                     type="button"
                     variant={passkeyAction === 'signup' ? 'default' : 'ghost'}
+                    disabled={isSubmitting}
                     onClick={() => {
                       setPasskeyAction('signup');
                       setError('');
+                      setRetryAction(null);
                     }}
                   >
                     Create Account
@@ -487,11 +604,11 @@ export const Login = () => {
                   </div>
                 </div>
 
-                <Button className="w-full" type="button" disabled={submitting} onClick={() => void handlePasskeyAuth()}>
-                  {submitting ? (
+                <Button className="w-full" type="button" disabled={isSubmitting} onClick={() => void performPasskeyAuth()}>
+                  {submittingAction === 'passkey' ? (
                     <>
                       <Loader2 className="mr-2 animate-spin" size={16} />
-                      Working...
+                      {passkeyAction === 'signup' ? 'Creating passkey...' : 'Checking passkey...'}
                     </>
                   ) : passkeyAction === 'signup' ? (
                     'Create account with passkey'
@@ -512,9 +629,15 @@ export const Login = () => {
             </div>
 
             <GoogleAuthButton
-              disabled={submitting}
+              disabled={isSubmitting}
+              loading={submittingAction === 'google'}
               redirectTo={redirectTarget}
-              onError={(message) => setError(message)}
+              onStart={() => {
+                setSubmittingAction('google');
+                setRetryAction('google');
+                setError('');
+              }}
+              onError={handleGoogleAuthError}
             />
           </div>
         )}

@@ -20,14 +20,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.error('[api] Request failed', {
-      method: error.config?.method,
-      url: error.config?.url,
-      baseURL: error.config?.baseURL,
-      status: error.response?.status,
-      message: error.message,
-      data: error.response?.data,
-    });
+    const requestUrl = String(error.config?.url || '');
+    const isAuthEndpoint = /\/auth(\/|$)/.test(requestUrl);
+
+    if (typeof error.response?.data?.error === 'string' && !error.message) {
+      error.message = error.response.data.error;
+    }
 
     if (!error.response && error.code === 'ERR_NETWORK') {
       error.message = `Cannot reach the API server at ${API_BASE_URL}.`;
@@ -36,17 +34,15 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       const path = window.location.pathname;
       const isAdminRoute = path.startsWith('/admin');
-      const isAdminApi = String(error.config?.url || '').includes('/admin/');
-      const isAuthLogin = String(error.config?.url || '').includes('/auth/login');
-      const isAdminLogin = String(error.config?.url || '').includes('/auth/admin/login');
+      const isAdminApi = requestUrl.includes('/admin/');
 
-      if (!isAuthLogin && !isAdminLogin) {
+      if (!isAuthEndpoint) {
         clearSession();
       }
 
-      if (isAdminRoute || isAdminApi) {
+      if ((isAdminRoute || isAdminApi) && !isAuthEndpoint) {
         window.location.href = '/auth/login';
-      } else if (!isAuthLogin && !isAdminLogin) {
+      } else if (!isAuthEndpoint) {
         window.location.href = '/auth/login';
       }
     }
