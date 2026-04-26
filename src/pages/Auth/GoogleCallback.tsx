@@ -21,10 +21,10 @@ export const GoogleCallback = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [error, setError] = useState('');
-  const storedUser = getStoredUser();
+  const storedUser = getStoredUser('user');
 
   useEffect(() => {
-    if (hasStoredSession() && storedUser) {
+    if (hasStoredSession('user') && storedUser) {
       return;
     }
 
@@ -64,8 +64,8 @@ export const GoogleCallback = () => {
     }
   }, [navigate, searchParams, storedUser]);
 
-  if (hasStoredSession() && storedUser) {
-    return <Navigate to={storedUser.isAdmin ? '/admin' : '/dashboard'} replace />;
+  if (hasStoredSession('user') && storedUser) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return (

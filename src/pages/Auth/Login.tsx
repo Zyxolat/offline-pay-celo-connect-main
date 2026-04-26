@@ -10,7 +10,6 @@ import { getGoogleAuthStartUrl } from '@/config/env';
 import {
   getStoredUser,
   hasStoredSession,
-  isAdminUser,
   storeSession,
 } from '@/lib/auth';
 import { authAPI } from '@/services/apiClient';
@@ -94,7 +93,8 @@ const canUsePasskeys = async () => {
 export const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const storedUser = getStoredUser();
+  const storedAdminUser = getStoredUser('admin');
+  const storedUser = getStoredUser('user');
   const isAdminEntry = Boolean(
     (location.state as { from?: { pathname?: string } } | null)?.from?.pathname?.startsWith('/admin'),
   );
@@ -140,8 +140,12 @@ export const Login = () => {
         ? 'Choose password, Google, or a passkey. Using the same email keeps every sign-in method attached to one account.'
         : 'Sign in with password, Google, or a passkey. All methods attach to the same user account when the email matches.';
 
-  if (hasStoredSession() && storedUser) {
-    return <Navigate to={isAdminUser(storedUser) ? '/admin' : '/dashboard'} replace />;
+  if (mode === 'admin' && hasStoredSession('admin') && storedAdminUser) {
+    return <Navigate to="/admin" replace />;
+  }
+
+  if (mode === 'user' && hasStoredSession('user') && storedUser) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   const performAdminLogin = async () => {

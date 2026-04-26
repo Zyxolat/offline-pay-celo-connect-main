@@ -19,14 +19,14 @@ export const SettingsPage = () => {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   useEffect(() => {
-    setUser(getStoredUser());
+    setUser(getStoredUser('user'));
   }, []);
 
   const handleLogout = async () => {
     try {
       await authAPI.logout();
     } finally {
-      clearSession();
+      clearSession('user');
       navigate('/auth/login');
     }
   };
@@ -35,7 +35,7 @@ export const SettingsPage = () => {
     try {
       await authAPI.logout();
     } finally {
-      clearSession();
+      clearSession('user');
       navigate('/');
     }
   };

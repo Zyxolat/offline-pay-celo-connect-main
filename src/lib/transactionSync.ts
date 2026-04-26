@@ -10,7 +10,7 @@ export const syncTrackedTransaction = async (payload: {
   confirmations?: number;
   note?: string;
 }) => {
-  if (!getStoredToken()) {
+  if (!getStoredToken("user")) {
     return null;
   }
 

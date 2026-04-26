@@ -1,10 +1,10 @@
 import { Router } from 'express';
 import { walletController } from '../controllers/walletController';
-import { authMiddleware } from '../middleware/auth';
+import { requireUserAuth } from '../middleware/auth';
 
 const router = Router();
 
-router.use(authMiddleware);
+router.use(requireUserAuth);
 
 router.get('/balance', walletController.getBalance);
 router.get('/address', walletController.getAddress);
