@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Navigate } from 'react-router-dom';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -38,12 +38,8 @@ const formatCurrencyValue = (value: unknown) => {
 };
 
 export const AdminDashboard = () => {
-  const [isAdminAuthed, setIsAdminAuthed] = useState(false);
+  const [isAdminAuthed, setIsAdminAuthed] = useState(() => hasValidStoredAdminSession());
   const { stats, loading, error } = useAdminStats(isAdminAuthed);
-
-  useEffect(() => {
-    setIsAdminAuthed(hasValidStoredAdminSession());
-  }, []);
 
   const handleLogout = () => {
     void authAPI.logout().catch(() => undefined);
