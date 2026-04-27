@@ -4,6 +4,7 @@ import type {
   RegistrationResponseJSON,
 } from '@simplewebauthn/types';
 import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { type Request, type Response } from 'express';
 import jwt from 'jsonwebtoken';
 import { OAuth2Client } from 'google-auth-library';
@@ -303,14 +304,13 @@ const findUserCredentialByAnyId = async (userId: string, candidateIds: string[])
 const getValidChallenge = async (
   challengeId: string,
   expectedPurpose: 'registration' | 'login',
-  expectedUserId: string,
 ): Promise<WebAuthnChallenge | null> => {
   const challenge = await ChallengeModel.findById(challengeId);
   if (!challenge) {
     return null;
   }
 
-  if (challenge.purpose !== expectedPurpose || challenge.user_id !== expectedUserId) {
+  if (challenge.purpose !== expectedPurpose) {
     return null;
   }
 
@@ -720,28 +720,39 @@ export const authController = {
         return;
       }
 
-      let user = await UserModel.findByEmail(email);
+      const user = await UserModel.findByEmail(email);
       if (user?.is_admin) {
         return errorResponse(res, 'Admin account must use the admin login form.', 403);
       }
 
-      if (!user) {
-        user = await UserModel.create(email, celoService.generateWalletAddress());
+      const existingCredentials = user ? await CredentialModel.findByUserId(user.id) : [];
+      const registrationUserId = user?.id ?? randomUUID();
+      const options = await webauthnConfig.generateRegistrationOptions(
+        registrationUserId,
+        email,
+        existingCredentials.map((credential) => ({
+          id: Buffer.from(credential.credential_id, 'base64url'),
+          type: 'public-key' as const,
+          transports: asAuthenticatorTransports(credential.transports),
+        })),
+      );
+
+      if (user) {
+        await ChallengeModel.deleteActiveByUser(user.id, 'registration');
       }
 
-      const existingCredentials = await CredentialModel.findByUserId(user.id);
-      if (existingCredentials.length > 0) {
-        return errorResponse(res, 'An account already exists for this email. Sign in instead.', 409);
-      }
-
-      const options = await webauthnConfig.generateRegistrationOptions(user.id, email);
-      await ChallengeModel.deleteActiveByUser(user.id, 'registration');
-      const challenge = await ChallengeModel.create(Buffer.from(options.challenge, 'base64url'), 'registration', user.id);
+      const challenge = await ChallengeModel.create(
+        Buffer.from(options.challenge, 'base64url'),
+        'registration',
+        user?.id,
+      );
 
       logAuthEvent('INFO', 'Passkey registration options generated', res, {
-        userId: user.id,
+        userId: user?.id ?? registrationUserId,
         email,
         challengeId: challenge.id,
+        existingUser: Boolean(user),
+        existingCredentialCount: existingCredentials.length,
         rpId: config.webauthn.rpID,
         origin: config.webauthn.origin,
       });
@@ -770,19 +781,32 @@ export const authController = {
         return;
       }
 
-      const user = await UserModel.findByEmail(email);
-      if (!user || user.is_admin) {
-        return errorResponse(res, 'User account not found for this registration attempt.', 404);
+      let user = await UserModel.findByEmail(email);
+      if (user?.is_admin) {
+        return errorResponse(res, 'Admin account must use the admin login form.', 403);
       }
 
-      const challenge = await getValidChallenge(payload.challengeId, 'registration', user.id);
+      const challenge = await getValidChallenge(payload.challengeId, 'registration');
       if (!challenge) {
         return errorResponse(res, 'Registration challenge not found or expired.', 400);
       }
 
+      if (challenge.user_id) {
+        if (user && challenge.user_id !== user.id) {
+          return errorResponse(res, 'Registration challenge did not match the supplied account.', 400);
+        }
+
+        if (!user) {
+          user = await UserModel.findById(challenge.user_id);
+          if (!user || user.is_admin || normalizeEmail(user.email) !== email) {
+            return errorResponse(res, 'Registration challenge did not match the supplied account.', 400);
+          }
+        }
+      }
+
       const candidateCredentialIds = getCredentialResponseIds(payload.credential);
       const existingCredential = await findCredentialByAnyId(candidateCredentialIds);
-      if (existingCredential && existingCredential.user_id !== user.id) {
+      if (existingCredential && (!user || existingCredential.user_id !== user.id)) {
         return errorResponse(res, 'This passkey is already linked to another account.', 409);
       }
 
@@ -795,7 +819,7 @@ export const authController = {
       });
 
       logAuthEvent('INFO', 'Passkey registration verification completed', res, {
-        userId: user.id,
+        userId: user?.id ?? challenge.user_id ?? 'pending-passkey-user',
         email,
         challengeId: challenge.id,
         verified: verification.verified,
@@ -806,7 +830,28 @@ export const authController = {
         return errorResponse(res, 'Passkey registration could not be verified.', 400);
       }
 
+      if (!user) {
+        try {
+          user = await UserModel.create(email, celoService.generateWalletAddress());
+        } catch (error) {
+          const existingUser = await UserModel.findByEmail(email);
+          if (!existingUser || existingUser.is_admin) {
+            throw error;
+          }
+
+          user = existingUser;
+        }
+      }
+
       const canonicalCredentialId = bufferToBase64Url(verification.registrationInfo.credentialID);
+
+      if (challenge.user_id && challenge.user_id !== user.id) {
+        return errorResponse(res, 'Registration challenge did not match the supplied account.', 400);
+      }
+
+      if (existingCredential && existingCredential.user_id !== user.id) {
+        return errorResponse(res, 'This passkey is already linked to another account.', 409);
+      }
 
       if (!existingCredential) {
         await CredentialModel.create(
@@ -868,6 +913,7 @@ export const authController = {
           transports: asAuthenticatorTransports(credential.transports),
         })),
       );
+<<<<<<< HEAD
 
       logAuthEvent('INFO', 'Passkey login raw options generated', res, {
         userId: user.id,
@@ -879,6 +925,16 @@ export const authController = {
       });
 
       const options = serializeAuthenticationOptions(generatedOptions);
+=======
+      const options = {
+        ...serializeAuthenticationOptions(generatedOptions),
+        challenge: generatedOptions.challenge,
+      };
+
+      if (typeof options.challenge !== 'string' || !options.challenge.trim()) {
+        throw new Error('Generated authentication options did not include a valid challenge.');
+      }
+>>>>>>> fb7ffea (fix auth passkey limiter challenge and signup flow)
 
       await ChallengeModel.deleteActiveByUser(user.id, 'login');
       const challenge = await ChallengeModel.create(Buffer.from(options.challenge, 'base64url'), 'login', user.id);
@@ -921,8 +977,12 @@ export const authController = {
         return errorResponse(res, 'No user account found for this email.', 404);
       }
 
-      const challenge = await getValidChallenge(payload.challengeId, 'login', user.id);
+      const challenge = await getValidChallenge(payload.challengeId, 'login');
       if (!challenge) {
+        return errorResponse(res, 'Login challenge not found or expired.', 400);
+      }
+
+      if (challenge.user_id !== user.id) {
         return errorResponse(res, 'Login challenge not found or expired.', 400);
       }
 

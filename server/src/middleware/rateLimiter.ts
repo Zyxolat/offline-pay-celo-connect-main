@@ -25,6 +25,15 @@ export const authLimiter = rateLimit({
   handler: jsonRateLimitHandler('Too many failed attempts, please try again later.'),
 });
 
+export const passkeyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 50,
+  skipSuccessfulRequests: true,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: jsonRateLimitHandler('Too many passkey attempts, please try again later.'),
+});
+
 export const paymentLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
   max: 5, // 5 payments per minute
