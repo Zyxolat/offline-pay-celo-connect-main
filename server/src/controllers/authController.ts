@@ -925,15 +925,10 @@ export const authController = {
       });
 
       const options = serializeAuthenticationOptions(generatedOptions);
-      const options = {
-        ...serializeAuthenticationOptions(generatedOptions),
-        challenge: generatedOptions.challenge,
-      };
 
       if (typeof options.challenge !== 'string' || !options.challenge.trim()) {
         throw new Error('Generated authentication options did not include a valid challenge.');
       }
-      fb7ffea (fix auth passkey limiter challenge and signup flow)
 
       await ChallengeModel.deleteActiveByUser(user.id, 'login');
       const challenge = await ChallengeModel.create(Buffer.from(options.challenge, 'base64url'), 'login', user.id);
