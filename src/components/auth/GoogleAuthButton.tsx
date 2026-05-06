@@ -1,4 +1,4 @@
-import { getGoogleAuthStartUrl } from '@/config/env';
+import { googleLogin } from '@/services/auth';
 import { Button } from '@/components/ui/button';
 import { Loader2 } from 'lucide-react';
 
@@ -17,11 +17,10 @@ export const GoogleAuthButton = ({
   onStart,
   onError,
 }: GoogleAuthButtonProps) => {
-  const handleGoogleLogin = () => {
+  const handleGoogleLogin = async () => {
     try {
       onStart?.();
-      const targetUrl = getGoogleAuthStartUrl(redirectTo);
-      window.location.assign(targetUrl);
+      await googleLogin(redirectTo);
     } catch (error) {
       onError(error instanceof Error ? error.message : 'Google sign-in could not be started. Please try again.');
     }

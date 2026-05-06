@@ -1,14 +1,5 @@
-import { useEffect, useState } from 'react';
-import { Loader2 } from 'lucide-react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router-dom';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { getStoredUser, hasStoredSession, storeSession, type SessionUser } from '@/lib/auth';
-
-type GoogleCallbackResult = {
-  sessionToken: string;
-  user: SessionUser;
-  redirectTo?: string;
-};
+import { useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 const decodeBase64UrlJson = <T,>(value: string): T => {
   const normalized = value.replace(/-/g, '+').replace(/_/g, '/');
@@ -20,68 +11,67 @@ const decodeBase64UrlJson = <T,>(value: string): T => {
 export const GoogleCallback = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const [error, setError] = useState('');
-  const storedUser = getStoredUser('user');
 
   useEffect(() => {
-    if (hasStoredSession('user') && storedUser) {
+    const sessionToken = searchParams.get('sessionToken');
+    const user = searchParams.get('user');
+    const error = searchParams.get('error');
+    const redirectTo = searchParams.get('redirectTo');
+
+    if (error) {
+      console.error('Google auth error:', error);
+      navigate('/auth/signup?error=' + encodeURIComponent(error));
+      return;
+    }
+
+    if (sessionToken) {
+      localStorage.setItem('sessionToken', sessionToken);
+      if (user) {
+        localStorage.setItem('user', user);
+      }
+      navigate(redirectTo?.startsWith('/') ? redirectTo : '/dashboard');
       return;
     }
 
     const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const encodedResult = hashParams.get('result');
-    const callbackError = hashParams.get('error');
+    const hashError = hashParams.get('error');
 
-    if (searchParams.get('code') || searchParams.get('state')) {
-      setError(
-        'Google is redirecting to the frontend instead of the backend callback. Set GOOGLE_CALLBACK_URL to your backend /auth/google/callback or /api/auth/google/callback URL.',
-      );
+    if (hashError) {
+      console.error('Google auth error:', hashError);
+      navigate('/auth/signup?error=' + encodeURIComponent(hashError));
       return;
     }
 
-    if (callbackError) {
-      setError(callbackError);
-      return;
-    }
+    if (encodedResult) {
+      try {
+        const result = decodeBase64UrlJson<{ sessionToken: string; user: string; redirectTo?: string }>(encodedResult);
 
-    if (!encodedResult) {
-      setError('Google sign-in did not return a session result. Please try again.');
-      return;
-    }
+        if (!result.sessionToken || !result.user) {
+          throw new Error('Google sign-in result was incomplete.');
+        }
 
-    try {
-      const result = decodeBase64UrlJson<GoogleCallbackResult>(encodedResult);
-
-      if (!result.sessionToken || !result.user) {
-        throw new Error('Google sign-in result was incomplete.');
+        localStorage.setItem('sessionToken', result.sessionToken);
+        localStorage.setItem('user', JSON.stringify(result.user));
+        window.history.replaceState({}, document.title, window.location.pathname);
+        navigate(result.redirectTo?.startsWith('/') ? result.redirectTo : '/dashboard');
+        return;
+      } catch (parseError) {
+        console.error('Google auth parse error:', parseError);
+        navigate('/auth/signup?error=Google+sign-in+could+not+be+completed');
+        return;
       }
-
-      storeSession(result.sessionToken, result.user);
-      window.history.replaceState({}, document.title, window.location.pathname);
-      navigate(result.redirectTo?.startsWith('/') ? result.redirectTo : '/dashboard', { replace: true });
-    } catch (parseError) {
-      setError(parseError instanceof Error ? parseError.message : 'Google sign-in could not be completed.');
     }
-  }, [navigate, searchParams, storedUser]);
 
-  if (hasStoredSession('user') && storedUser) {
-    return <Navigate to="/dashboard" replace />;
-  }
+    navigate('/auth/signup?error=No+session+token');
+  }, [navigate, searchParams]);
 
   return (
-    <div className="space-y-4">
-      {error ? (
-        <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      ) : (
-        <Alert>
-          <AlertDescription className="flex items-center gap-2">
-            <Loader2 className="animate-spin" size={16} />
-            Completing Google sign-in...
-          </AlertDescription>
-        </Alert>
-      )}
+    <div className="flex items-center justify-center min-h-screen">
+      <div className="text-center">
+        <h2>Completing login...</h2>
+        <p>Please wait while we redirect you.</p>
+      </div>
     </div>
   );
 };
